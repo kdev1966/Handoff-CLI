@@ -223,4 +223,55 @@ def test_all_handoffs_and_since(project: Project) -> None:
         assert [h.summary for h in store.all_handoffs(project.key)] == ["a", "b"]
         assert len(store.handoffs_since("2000-01-01T00:00:00+00:00")) == 2
         assert store.handoffs_since("2999-01-01T00:00:00+00:00") == []
-        assert store.list_projects()[0].last_agent == "claude"
+        assert store.list_projects()[0].last_agent == "claude-code"
+
+
+def test_agent_aliases_are_merged(project: Project) -> None:
+    with Store() as store:
+        handoff = save(store, project, agent="Claude")
+        assert handoff.agent == "claude-code"
+        assert save(store, project, agent="gemini").agent == "gemini-cli"
+        assert save(store, project, agent="my-own-bot").agent == "my-own-bot"
+
+
+def test_old_aliases_are_shown_under_the_tool_name(handoff_home: Path, project: Project) -> None:
+    with Store() as store:
+        save(store, project, agent="claude-code")
+    conn = sqlite3.connect(paths.db_path())
+    conn.execute("UPDATE handoffs SET agent = 'claude'")
+    conn.commit()
+    conn.close()
+    with Store() as store:
+        assert store.latest(project.key).agent == "claude-code"
+        assert store.list_projects()[0].last_agent == "claude-code"
+
+
+def test_manual_save_keeps_the_assistants_baseline(project: Project) -> None:
+    with Store() as store:
+        store.set_fingerprints(project.key, baseline="assistant-start", reminded=None)
+        save(store, project, agent="cli")
+        assert store.fingerprints(project.key) == ("assistant-start", None)
+        save(store, project, agent="codex")
+        assert store.fingerprints(project.key)[0] != "assistant-start"
+
+
+def test_restore_keeps_the_assistants_baseline(project: Project) -> None:
+    with Store() as store:
+        first = save(store, project, agent="codex")
+        store.set_fingerprints(project.key, baseline="assistant-start", reminded=None)
+        store.restore(first.id, project)
+        assert store.fingerprints(project.key) == ("assistant-start", None)
+
+
+@pytest.mark.parametrize(
+    ("summary", "next_actions", "expected"),
+    [
+        ("SUMMARY", "Write tests", ["warning.summary_short"]),
+        ("Auth module done, tests pending.", "", ["warning.no_next_actions"]),
+        ("todo", "", ["warning.summary_short", "warning.no_next_actions"]),
+        ("Auth module done, tests pending.", "Write the integration tests", []),
+    ],
+)
+def test_warnings(project: Project, summary: str, next_actions: str, expected: list[str]) -> None:
+    with Store() as store:
+        assert save(store, project, summary=summary, next_actions=next_actions).warnings() == expected

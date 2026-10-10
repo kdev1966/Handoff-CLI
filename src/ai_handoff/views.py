@@ -97,6 +97,13 @@ def _lane_color(name: str, by: str) -> str:
     return ui.key_color(name)
 
 
+MIN_SUMMARY_WIDTH = 24
+
+
+def _width(labels: dict[int, str]) -> int:
+    return max((len(label) for label in labels.values()), default=0)
+
+
 def log(handoffs: list[Handoff], by: str, width: int, now: datetime | None = None) -> Group:
     """A 'git log --graph' style view, newest first."""
     glyphs = ui.glyphs()
@@ -113,8 +120,16 @@ def log(handoffs: list[Handoff], by: str, width: int, now: datetime | None = Non
     agent_width = max((len(row.handoff.agent) for row in rows), default=0)
     times = [ui.relative_time(row.handoff.created_at, now) for row in rows]
     time_width = max((len(value) for value in times), default=0)
-    git_width = max((len(row.handoff.git_label() or "") for row in rows), default=0)
     id_width = max((len(str(row.handoff.id)) for row in rows), default=0) + 1
+
+    # Keep room for the summary: shorten 'branch @ commit' to the commit, or drop it, when narrow.
+    used = graph_width + 1 + id_width + 2 + agent_width + 2 + time_width + 2
+    git_labels = {row.handoff.id: row.handoff.git_label() or "" for row in rows}
+    if width - used - _width(git_labels) - 2 < MIN_SUMMARY_WIDTH:
+        git_labels = {row.handoff.id: (row.handoff.git_commit or "")[:7] for row in rows}
+    if width - used - _width(git_labels) - 2 < MIN_SUMMARY_WIDTH:
+        git_labels = {}
+    git_width = _width(git_labels)
 
     for row, when in zip(rows, times, strict=True):
         if row.from_lane is not None:
@@ -136,7 +151,7 @@ def log(handoffs: list[Handoff], by: str, width: int, now: datetime | None = Non
         line.append(when.ljust(time_width), style="time")
         if git_width:
             line.append("  ")
-            line.append(ui.safe(handoff.git_label() or "").ljust(git_width), style="branch")
+            line.append(ui.safe(git_labels[handoff.id]).ljust(git_width), style="branch")
         line.append("  ")
         summary = handoff.summary.splitlines()[0] if handoff.summary else ""
         if handoff.is_restore:
@@ -227,10 +242,12 @@ def _heatmap(handoffs: list[Handoff], today: date) -> list[Text]:
     ]
     for index, column in enumerate(starts):
         label = t("month.short").split(",")[mondays[column].month - 1]
-        last = index + 1 == len(starts)
-        room = 2 * ((len(mondays) if last else starts[index + 1]) - column)
-        if len(label) < room or (last and len(label) <= room):  # the last label needs no gap after it
-            months[2 * column : 2 * column + len(label)] = label
+        if index + 1 < len(starts) and len(label) >= 2 * (starts[index + 1] - column):
+            continue  # it would run into the next month's label
+        # The last month may run past the grid: nothing follows it.
+        end = 2 * column + len(label)
+        months += [" "] * max(0, end - len(months))
+        months[2 * column : end] = label
     lines = [Text(" " * margin + "".join(months), style="muted")]
 
     for row_index, row in enumerate(grid):

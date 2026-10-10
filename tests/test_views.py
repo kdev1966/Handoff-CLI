@@ -46,7 +46,7 @@ def test_layout_assigns_lanes_in_order_of_appearance() -> None:
         [handoff(4, "claude"), handoff(3, "copilot"), handoff(2, "claude"), handoff(1, "gemini")],
         graph.lane_key_agent,
     )
-    assert lanes == ["claude", "copilot", "gemini"]
+    assert lanes == ["claude-code", "copilot", "gemini-cli"]
     assert [(row.lane, row.from_lane) for row in rows] == [(0, None), (1, 0), (0, 1), (2, 0)]
 
 
@@ -231,3 +231,40 @@ def test_relative_time(hours: float, expected: str) -> None:
 def test_relative_time_falls_back_to_a_date() -> None:
     assert ui.relative_time("2026-01-05T10:00:00+00:00", NOW) == "Jan 5"
     assert ui.relative_time("2025-01-05T10:00:00+00:00", NOW) == "Jan 5, 2025"
+
+
+def test_log_shortens_git_labels_when_narrow() -> None:
+    handoffs = [
+        handoff(
+            2,
+            "copilot",
+            1,
+            git_branch="feature/very-long-branch-name",
+            git_commit="a1b2c3d4e5f6",
+            summary="Wide summary here",
+        ),
+        handoff(
+            1,
+            "claude-code",
+            2,
+            git_branch="feature/very-long-branch-name",
+            git_commit="0f9e8d7c6b5a",
+            summary="Another summary",
+        ),
+    ]
+    wide = render(views.log(handoffs, "agent", 160, NOW), width=160)
+    assert "feature/very-long-branch-name @ a1b2c3d" in wide
+    medium = render(views.log(handoffs, "agent", 80, NOW), width=80)
+    assert "feature/very-long-branch-name" not in medium
+    assert "a1b2c3d" in medium
+    assert "Wide summary here" in medium
+    narrow = render(views.log(handoffs, "agent", 60, NOW), width=60)
+    assert "a1b2c3d" not in narrow
+    assert "Wide summary" in narrow
+
+
+def test_heatmap_labels_the_current_month(tmp_path) -> None:
+    project = Project(key="path:/p", root=tmp_path, name="api")
+    out = render(views.stats(project, [handoff(1, hours_ago=2)], date(2026, 10, 11), NOW))
+    months_line = next(line for line in out.splitlines() if "Sep" in line)
+    assert "Oct" in months_line

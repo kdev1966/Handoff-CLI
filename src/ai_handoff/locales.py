@@ -101,6 +101,8 @@ EN = {
     "weekday.short": "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
     # Command results
     "save.done": "Saved handoff #{id} for {project}.",
+    "warning.summary_short": "Warning: the summary is very short or says nothing; whoever continues will lack context. Save again with what is done, what is in progress and the decisions taken.",
+    "warning.no_next_actions": "Warning: no next actions; say what whoever continues should do next.",
     "pause.done": "Paused {project}: assistants can no longer read or save its memory.",
     "resume.done": "Resumed {project}.",
     "purge.confirm": "Delete the whole memory of {project} ({key})?",
@@ -302,6 +304,8 @@ FR = {
     "weekday.short": "lun.,mar.,mer.,jeu.,ven.,sam.,dim.",
     # Résultats des commandes
     "save.done": "Passation #{id} enregistrée pour {project}.",
+    "warning.summary_short": "Attention : le résumé est très court ou ne dit rien ; la personne qui reprend manquera de contexte. Enregistrez à nouveau avec ce qui est fait, ce qui est en cours et les décisions prises.",
+    "warning.no_next_actions": "Attention : aucune prochaine action ; indiquez ce que la personne qui reprend doit faire ensuite.",
     "pause.done": "{project} est en pause : les assistants ne peuvent plus lire ni enregistrer sa mémoire.",
     "resume.done": "Suivi de {project} repris.",
     "purge.confirm": "Supprimer toute la mémoire de {project} ({key}) ?",

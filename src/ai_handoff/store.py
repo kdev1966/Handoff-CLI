@@ -20,6 +20,55 @@ MAX_HISTORY = 100
 BUSY_TIMEOUT_SECONDS = 10
 
 _AGENT = re.compile(r"[\w .:/@+-]{1,64}")
+
+# The agent name used by 'handoff save' when a person saves by hand.
+CLI_AGENT = "cli"
+
+# Names assistants give themselves, mapped to one name per tool, so that the same tool
+# is not split across several lanes and counts.
+AGENT_ALIASES = {
+    "claude": "claude-code",
+    "claude code": "claude-code",
+    "claudecode": "claude-code",
+    "claude-code-cli": "claude-code",
+    "gemini": "gemini-cli",
+    "gemini cli": "gemini-cli",
+    "copilot cli": "copilot",
+    "copilot-cli": "copilot",
+    "github copilot": "copilot",
+    "github-copilot": "copilot",
+    "codex-cli": "codex",
+    "openai-codex": "codex",
+    "junie-cli": "junie",
+}
+
+# Summaries that say nothing: a reminder is shown when a handoff uses one.
+PLACEHOLDER_SUMMARIES = {
+    "summary",
+    "state",
+    "status",
+    "todo",
+    "tbd",
+    "wip",
+    "test",
+    "none",
+    "n/a",
+    "na",
+    "xxx",
+    "ok",
+    "done",
+    "-",
+    "...",
+    "?",
+}
+MIN_SUMMARY_LENGTH = 20
+
+
+def canonical_agent(agent: str) -> str:
+    agent = agent.strip()
+    return AGENT_ALIASES.get(agent.lower(), agent)
+
+
 # Control characters other than tab and newline.
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -75,9 +124,28 @@ class Handoff:
     git_branch: str | None = None
     git_commit: str | None = None
 
+    def __post_init__(self) -> None:
+        # Older handoffs may carry an alias ('claude'): show every handoff under its tool's name.
+        object.__setattr__(self, "agent", canonical_agent(self.agent))
+
     @property
     def is_restore(self) -> bool:
         return self.agent.startswith("restore:")
+
+    @property
+    def by_assistant(self) -> bool:
+        """Written by an AI assistant, not by a person with 'handoff save' or 'handoff restore'."""
+        return self.agent != CLI_AGENT and not self.is_restore
+
+    def warnings(self) -> list[str]:
+        """Message keys for a handoff that will not help whoever continues."""
+        found = []
+        summary = self.summary.strip()
+        if len(summary) < MIN_SUMMARY_LENGTH or summary.lower().strip(" .!") in PLACEHOLDER_SUMMARIES:
+            found.append("warning.summary_short")
+        if not self.next_actions.strip():
+            found.append("warning.no_next_actions")
+        return found
 
     def git_label(self) -> str | None:
         """'branch @ 1a2b3c4', or whichever part is known."""
@@ -140,7 +208,7 @@ def clean_agent(agent: str | None) -> str:
     agent = (agent or "").strip() or "unknown"
     if not _AGENT.fullmatch(agent):
         raise ValidationError(t("error.agent_invalid"))
-    return agent
+    return canonical_agent(agent)
 
 
 class Store:
@@ -314,8 +382,10 @@ class Store:
         fingerprint = git_fingerprint(project.root)
         with self._conn:
             self._upsert_project(project)
-            # The memory now describes the code as it is.
-            self._set_fingerprints(project.key, fingerprint, None)
+            if agent != CLI_AGENT and not agent.startswith("restore:"):
+                # An assistant's handoff now describes the code as it is. A person's save or
+                # restore does not: the assistant still has to document its own work.
+                self._set_fingerprints(project.key, fingerprint, None)
             cursor = self._conn.execute(
                 """
                 INSERT INTO handoffs (project_key, agent, stack, summary, next_actions, redactions,
@@ -354,7 +424,8 @@ _PROJECT_ORDER = "ORDER BY last_handoff_at IS NULL, last_handoff_at DESC, p.name
 
 
 def _record(row: sqlite3.Row) -> ProjectRecord:
-    return ProjectRecord(**{**dict(row), "paused": bool(row["paused"])})
+    last_agent = canonical_agent(row["last_agent"]) if row["last_agent"] else None
+    return ProjectRecord(**{**dict(row), "paused": bool(row["paused"]), "last_agent": last_agent})
 
 
 def _restrict(path: Path, mode: int) -> None:
