@@ -78,18 +78,24 @@ def run_setup(
         return 0
     _say(t("setup.detected", clients=", ".join(integration.label for integration in chosen)), "bold")
 
+    automatic = False
     if not yes and not dry_run:
         if not interactive:
             _say(t("setup.non_interactive"), "warning")
             return 0
-        choice = _choose(t("setup.menu"), [t("setup.all"), t("setup.pick"), t("setup.later")], "1")
-        if choice == "3":
-            _say(t("setup.skipped"), "muted")
-            return 0
-        if choice == "2":
-            chosen = [item for item in chosen if ask_yes(t("setup.ask_client", client=item.label))]
-        if hooks is None:
-            hooks = ask_yes(t("setup.ask_hooks"))
+        mode = _choose(t("setup.mode"), [t("setup.mode_auto"), t("setup.mode_manual")], "1")
+        if mode == "1":
+            # Default values: every tool found, hooks on, no further question.
+            automatic = yes = True
+        else:
+            choice = _choose(t("setup.menu"), [t("setup.all"), t("setup.pick"), t("setup.later")], "1")
+            if choice == "3":
+                _say(t("setup.skipped"), "muted")
+                return 0
+            if choice == "2":
+                chosen = [item for item in chosen if ask_yes(t("setup.ask_client", client=item.label))]
+            if hooks is None:
+                hooks = ask_yes(t("setup.ask_hooks"))
     hooks = True if hooks is None else hooks
 
     preview = integrations.apply(chosen, hooks=hooks, dry_run=True)
@@ -97,8 +103,9 @@ def run_setup(
         _print_outcomes(preview, preview=True)
         _say(t("setup.nothing_to_do"), "success")
         return 0
-    _say(t("setup.planned"), "bold")
-    _print_outcomes(preview, preview=True)
+    if not automatic:
+        _say(t("setup.planned"), "bold")
+        _print_outcomes(preview, preview=True)
     if dry_run:
         return 0
     if not yes and not ask_yes(t("setup.confirm")):

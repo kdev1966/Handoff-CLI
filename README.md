@@ -45,7 +45,11 @@ powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/kde
 Le script :
 - installe Handoff dans un environnement virtuel privé, sans droits administrateur ni `sudo` ;
 - ajoute la commande `handoff` à votre `PATH` ;
-- lance l'assistant de configuration `handoff setup` (voir plus bas) : **vous choisissez** quels outils connecter, vous voyez les changements prévus, et rien n'est écrit sans votre confirmation.
+- à la première installation, vous propose deux modes :
+  1. **Automatique** : tous les outils IA trouvés sont connectés avec les valeurs par défaut (lecture et enregistrement automatiques), sans autre question, et un récapitulatif s'affiche ;
+  2. **Manuelle** : l'assistant `handoff setup` détaillé ci-dessous, où vous choisissez les outils et les options, voyez les changements prévus et confirmez.
+
+Lors d'une mise à jour, la question n'est pas reposée : la configuration de vos outils est conservée.
 
 Vous pouvez lire le script avant de l'exécuter : il est court et commenté. Variables utiles :
 
@@ -70,9 +74,13 @@ Si vous préférez un gestionnaire d'outils Python : `pipx install git+https://g
 
 ## Connecter vos assistants
 
-`handoff setup` détecte les outils IA installés, vous laisse choisir, montre les changements prévus, puis les applique après confirmation :
+`handoff setup` détecte les outils IA installés et propose le mode automatique ou manuel. En mode manuel, il vous laisse choisir, montre les changements prévus, puis les applique après confirmation :
 
 ```text
+Comment voulez-vous configurer vos outils IA ?
+  1) Automatique : tous les outils trouvés, lecture et enregistrement automatiques (recommandé)
+  2) Manuelle : choisir les outils et les options
+> 2
 Outils IA trouvés sur cette machine : Claude Code, Gemini CLI, Copilot CLI, VS Code, Cline, Kiro…
 Que voulez-vous configurer ?
   1) Tous les outils trouvés

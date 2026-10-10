@@ -86,6 +86,8 @@ remove_from_path() {
 run_setup() {
     if [ -n "${HANDOFF_NO_SETUP:-}" ]; then
         say "Run 'handoff setup' to connect Handoff to your AI tools."
+    elif [ -n "$upgrade" ] && [ -z "${HANDOFF_SETUP_YES:-}" ]; then
+        say "Upgrade: your AI tools keep their configuration. Run 'handoff setup' to change it."
     elif [ -n "${HANDOFF_SETUP_YES:-}" ]; then
         "$VENV_DIR/bin/handoff" setup --yes || true
     elif (exec </dev/tty) 2>/dev/null; then
@@ -104,6 +106,10 @@ install() {
     source="${HANDOFF_SOURCE:-https://github.com/$REPO/archive/${HANDOFF_VERSION:-main}.tar.gz}"
     say "Installing Handoff with $("$python" --version 2>&1) from $source"
 
+    upgrade=""
+    if [ -x "$VENV_DIR/bin/handoff" ]; then
+        upgrade=1
+    fi
     mkdir -p "$(dirname "$VENV_DIR")"
     "$python" -m venv --clear "$VENV_DIR"
     "$VENV_DIR/bin/python" -m pip install --quiet --disable-pip-version-check "$source" ||

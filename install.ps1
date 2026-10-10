@@ -63,6 +63,7 @@ function Invoke-HandoffInstaller {
         Write-Host "Installing Handoff with $(& $python --version) from $source"
 
         New-Item -ItemType Directory -Force -Path $root | Out-Null
+        $isUpgrade = Test-Path $venvHandoff
         & $python -m venv --clear $venvDir
         if ($LASTEXITCODE -ne 0) {
             throw "Could not create the virtual environment in $venvDir. If an AI client is running Handoff, close it and run the installer again."
@@ -89,6 +90,8 @@ function Invoke-HandoffInstaller {
 
         if ($env:HANDOFF_NO_SETUP) {
             Write-Host "Run 'handoff setup' to connect Handoff to your AI tools."
+        } elseif ($isUpgrade -and -not $env:HANDOFF_SETUP_YES) {
+            Write-Host "Upgrade: your AI tools keep their configuration. Run 'handoff setup' to change it."
         } elseif ($env:HANDOFF_SETUP_YES) {
             & $binHandoff setup --yes
         } elseif (-not [Console]::IsInputRedirected) {

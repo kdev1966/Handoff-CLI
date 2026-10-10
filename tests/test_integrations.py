@@ -296,7 +296,7 @@ def test_setup_dry_run_previews_only(capsys, fake_home: Path) -> None:
 
 def test_setup_interactive(capsys, fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (fake_home / ".cursor").mkdir()
-    answers = iter(["1", "n", ""])  # all tools, no hooks, apply
+    answers = iter(["2", "1", "n", ""])  # manual: all tools, no hooks, apply
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
     code, out = run_cli(capsys, "setup")
@@ -308,10 +308,29 @@ def test_setup_interactive(capsys, fake_home: Path, monkeypatch: pytest.MonkeyPa
 
 def test_setup_interactive_later(capsys, fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (fake_home / ".cursor").mkdir()
-    monkeypatch.setattr("builtins.input", lambda _prompt: "3")
+    answers = iter(["2", "3"])  # manual, nothing for now
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
     assert run_cli(capsys, "setup")[0] == 0
     assert not (fake_home / ".cursor" / "mcp.json").exists()
+
+
+def test_setup_interactive_automatic(capsys, fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (fake_home / ".cursor").mkdir()
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return ""  # Enter: the default, automatic
+
+    monkeypatch.setattr("builtins.input", answer)
+    monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
+    code, out = run_cli(capsys, "setup")
+    assert code == 0
+    assert len(prompts) == 1  # one question only
+    assert "Planned changes" not in out
+    assert "Done" in out
+    assert (fake_home / ".cursor" / "hooks.json").exists()
 
 
 def test_setup_yes_then_doctor_then_remove(capsys, fake_home: Path) -> None:
