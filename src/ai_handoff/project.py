@@ -1,5 +1,6 @@
 """Work out which project a path belongs to and give it a stable key."""
 
+import hashlib
 import os
 import re
 import subprocess
@@ -23,8 +24,8 @@ class Project:
     name: str
 
 
-def run_git(root: Path, *args: str) -> str | None:
-    """Run a read-only git command in root; return its stripped output or None on any failure."""
+def git_output(root: Path, *args: str) -> str | None:
+    """Run a read-only git command in root; return its raw output, or None on any failure."""
     try:
         result = subprocess.run(
             ["git", "-C", str(root), *args],
@@ -37,9 +38,13 @@ def run_git(root: Path, *args: str) -> str | None:
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+    return result.stdout if result.returncode == 0 else None
+
+
+def run_git(root: Path, *args: str) -> str | None:
+    """Like git_output, but stripped, and None when the output is empty."""
+    output = git_output(root, *args)
+    return (output or "").strip() or None
 
 
 def normalize_remote(url: str) -> str | None:
@@ -137,3 +142,35 @@ def git_context(root: Path) -> tuple[str | None, str | None]:
     if branch == "HEAD" or not branch.isprintable() or len(branch) > MAX_BRANCH_LENGTH:
         branch = None
     return branch or None, commit
+
+
+MAX_UNTRACKED_FILES = 2000
+
+
+def git_fingerprint(root: Path) -> str | None:
+    """A hash of the working tree: HEAD, status, tracked changes and untracked files' size and time.
+
+    It changes whenever the code changes, so it tells whether work happened since a
+    given moment. None outside a repository or when git fails.
+    """
+    if not (root / ".git").exists():
+        return None
+    status = git_output(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    if status is None:
+        return None
+    digest = hashlib.sha256(status.encode("utf-8", "replace"))
+    head = run_git(root, "rev-parse", "--verify", "-q", "HEAD")
+    if head:
+        digest.update(head.encode())
+        diff = git_output(root, "diff", "HEAD", "--no-color", "--no-ext-diff", "--binary")
+        if diff is None:
+            return None
+        digest.update(diff.encode("utf-8", "replace"))
+    untracked = [entry[3:] for entry in status.split("\0") if entry.startswith("?? ")]
+    for name in untracked[:MAX_UNTRACKED_FILES]:
+        try:
+            info = (root / name).stat()
+        except OSError:
+            continue
+        digest.update(f"{name}:{info.st_size}:{info.st_mtime_ns}".encode("utf-8", "replace"))
+    return digest.hexdigest()

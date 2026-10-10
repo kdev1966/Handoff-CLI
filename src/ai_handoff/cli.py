@@ -17,7 +17,6 @@ from ai_handoff.context_file import context_path, remove_context, write_context
 from ai_handoff.errors import HandoffError
 from ai_handoff.i18n import t, tn
 from ai_handoff.project import Project, resolve_project
-from ai_handoff.setup_clients import mcp_config_json, setup_claude_code
 from ai_handoff.store import MAX_HISTORY, Handoff, Store
 
 
@@ -39,7 +38,8 @@ def _project_json(project: Project) -> dict[str, str]:
 
 
 def _say(message: str, style: str = "") -> None:
-    ui.console().print(Text(message, style=style))
+    # Never wrap messages: paths stay on one line, for copying and for scripts.
+    ui.console().print(Text(message, style=style), soft_wrap=True)
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -232,10 +232,87 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
+    from ai_handoff import setup_flow
+    from ai_handoff.integrations import mcp_config_json
+
     if args.print_config:
         print(mcp_config_json())
         return 0
-    return setup_claude_code(args.scope, args.dry_run, remove=args.remove)
+    interactive = sys.stdin.isatty()
+    if args.remove:
+        return setup_flow.run_remove(yes=args.yes, dry_run=args.dry_run, interactive=interactive)
+    return setup_flow.run_setup(
+        yes=args.yes,
+        names=args.client,
+        hooks=False if args.no_hooks else None,
+        dry_run=args.dry_run,
+        interactive=interactive,
+    )
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from ai_handoff import setup_flow
+
+    ui.console().print(setup_flow.doctor())
+    return 0
+
+
+def completion_shells() -> tuple[str, ...]:
+    from ai_handoff.completion import SHELLS
+
+    return SHELLS
+
+
+def cmd_completion(args: argparse.Namespace) -> int:
+    from ai_handoff import completion
+    from ai_handoff.integrations.files import Session
+
+    parser = build_parser()
+    if args.refresh:
+        completion.refresh(parser)
+        return 0
+    if args.uninstall:
+        session = Session()
+        completion.uninstall(session)
+        _say(t("completion.removed") if session.changes else t("completion.nothing"), "success")
+        return 0
+    shell = args.shell or completion.detect_shell()
+    if shell is None:
+        raise HandoffError(t("error.unknown_shell"))
+    if not args.install:
+        sys.stdout.write(completion.script(shell, parser))
+        return 0
+    try:
+        profile = completion.install(shell, parser, Session())
+    except FileNotFoundError as exc:
+        raise HandoffError(t("error.no_profile", shell=shell)) from exc
+    _say(t("completion.installed", shell=shell, profile=ui.short_path(str(profile))), "success")
+    return 0
+
+
+def cmd_welcome(args: argparse.Namespace) -> int:
+    project = None
+    paused, count, last = False, 0, None
+    try:
+        project = _project(None)
+        with Store() as store:
+            record = store.get_project(project.key)
+            paused = store.is_paused(project.key)
+            last = store.latest(project.key)
+            count = record.handoffs if record else 0
+    except HandoffError:
+        project = None
+    ui.console().print(views.welcome(__version__, project, paused, count, last))
+    return 0
+
+
+def cmd_hook(args: argparse.Namespace) -> int:
+    from ai_handoff import hooks
+
+    output = hooks.run(args.client, args.event, sys.stdin.read())
+    if output:
+        sys.stdout.write(output + "\n")
+    return 0
 
 
 def cmd_where(args: argparse.Namespace) -> int:
@@ -277,13 +354,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--version", action="version", version=f"%(prog)s {__version__}", help=t("help.version")
     )
     sub = parser.add_subparsers(
-        dest="command", required=True, metavar=t("help.command"), title=t("help.commands")
+        dest="command", required=False, metavar=t("help.command"), title=t("help.commands")
     )
 
-    def add(name: str, func, *, path: bool = True, json: bool = False) -> argparse.ArgumentParser:
+    def add(
+        name: str, func, *, path: bool = True, json: bool = False, hidden: bool = False
+    ) -> argparse.ArgumentParser:
         text = t(f"cmd.{name}")
+        # Internal commands get no 'help': argparse then leaves them out of the command list.
+        listed = {} if hidden else {"help": text}
         command = _localize(
-            sub.add_parser(name, help=text, description=text, formatter_class=_Formatter, add_help=False)
+            sub.add_parser(name, **listed, description=text, formatter_class=_Formatter, add_help=False)
         )
         command.set_defaults(func=func)
         if path:
@@ -295,12 +376,26 @@ def build_parser() -> argparse.ArgumentParser:
     add("show", cmd_show, json=True)
 
     log = add("log", cmd_log, json=True)
-    log.add_argument("--limit", "-l", type=int, default=20, choices=range(1, MAX_HISTORY + 1), metavar="N")
+    log.add_argument(
+        "--limit",
+        "-l",
+        type=int,
+        default=20,
+        choices=range(1, MAX_HISTORY + 1),
+        metavar="N",
+        help=t("opt.limit"),
+    )
     log.add_argument("--by", choices=("agent", "branch"), default="agent", help=t("opt.by"))
 
     history = add("history", cmd_history, json=True)
     history.add_argument(
-        "--limit", "-l", type=int, default=10, choices=range(1, MAX_HISTORY + 1), metavar="N"
+        "--limit",
+        "-l",
+        type=int,
+        default=10,
+        choices=range(1, MAX_HISTORY + 1),
+        metavar="N",
+        help=t("opt.limit"),
     )
 
     diff = add("diff", cmd_diff)
@@ -329,20 +424,35 @@ def build_parser() -> argparse.ArgumentParser:
     add("render", cmd_render)
 
     setup = add("setup", cmd_setup, path=False)
-    setup.add_argument("--scope", choices=("user", "local", "project"), default="user", help=t("opt.scope"))
+    setup.add_argument("--yes", "-y", action="store_true", help=t("opt.setup_yes"))
+    setup.add_argument("--client", action="append", metavar="NAME", help=t("opt.client"))
+    setup.add_argument("--no-hooks", action="store_true", help=t("opt.no_hooks"))
     setup.add_argument("--dry-run", action="store_true", help=t("opt.dry_run"))
     setup.add_argument("--print-config", action="store_true", help=t("opt.print_config"))
     setup.add_argument("--remove", action="store_true", help=t("opt.remove"))
 
+    add("doctor", cmd_doctor, path=False)
+    completion = add("completion", cmd_completion, path=False)
+    completion.add_argument("shell", nargs="?", choices=completion_shells(), help=t("opt.shell"))
+    completion.add_argument("--install", action="store_true", help=t("opt.completion_install"))
+    completion.add_argument("--uninstall", action="store_true", help=t("opt.completion_uninstall"))
+    completion.add_argument("--refresh", action="store_true", help=t("opt.completion_refresh"))
+    hook = add("hook", cmd_hook, path=False, hidden=True)
+    hook.add_argument("client")
+    hook.add_argument("event", choices=("session-start", "stop"))
+
     add("where", cmd_where)
-    add("serve", cmd_serve, path=False)
+    add("serve", cmd_serve, path=False, hidden=True)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     ui.configure_streams()
     ui.reset()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command is None:
+        args.func = cmd_welcome
     try:
         return args.func(args)
     except HandoffError as exc:

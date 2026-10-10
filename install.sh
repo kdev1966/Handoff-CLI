@@ -9,7 +9,8 @@
 # Environment variables:
 #   HANDOFF_VERSION=v0.1.0     tag or branch to install (default: main)
 #   HANDOFF_SOURCE=<pip spec>  install from this pip requirement instead (a folder, a wheel...)
-#   HANDOFF_NO_SETUP=1         do not register the MCP server in Claude Code
+#   HANDOFF_NO_SETUP=1         skip the setup assistant (run 'handoff setup' later)
+#   HANDOFF_SETUP_YES=1        connect every AI tool found, without questions
 #   HANDOFF_NO_MODIFY_PATH=1   do not add ~/.local/bin to your shell profile
 #
 # Everything lives in a private virtual environment; nothing is installed system-wide
@@ -82,6 +83,22 @@ remove_from_path() {
     done
 }
 
+run_setup() {
+    if [ -n "${HANDOFF_NO_SETUP:-}" ]; then
+        say "Run 'handoff setup' to connect Handoff to your AI tools."
+    elif [ -n "$upgrade" ] && [ -z "${HANDOFF_SETUP_YES:-}" ]; then
+        "$VENV_DIR/bin/handoff" completion --refresh >/dev/null 2>&1 || true
+        say "Upgrade: your AI tools keep their configuration. Run 'handoff setup' to change it."
+    elif [ -n "${HANDOFF_SETUP_YES:-}" ]; then
+        "$VENV_DIR/bin/handoff" setup --yes || true
+    elif (exec </dev/tty) 2>/dev/null; then
+        # Under 'curl | sh' stdin is this script: ask the questions on the terminal instead.
+        "$VENV_DIR/bin/handoff" setup </dev/tty || true
+    else
+        say "No terminal to ask you: run 'handoff setup' to connect Handoff to your AI tools."
+    fi
+}
+
 install() {
     python="$(find_python)" || fail "Python 3.10 or newer is required. Install it from https://www.python.org/downloads/ or your package manager (macOS: 'brew install python'), then run this installer again."
     "$python" -c 'import venv, ensurepip' 2>/dev/null ||
@@ -90,6 +107,10 @@ install() {
     source="${HANDOFF_SOURCE:-https://github.com/$REPO/archive/${HANDOFF_VERSION:-main}.tar.gz}"
     say "Installing Handoff with $("$python" --version 2>&1) from $source"
 
+    upgrade=""
+    if [ -x "$VENV_DIR/bin/handoff" ]; then
+        upgrade=1
+    fi
     mkdir -p "$(dirname "$VENV_DIR")"
     "$python" -m venv --clear "$VENV_DIR"
     "$VENV_DIR/bin/python" -m pip install --quiet --disable-pip-version-check "$source" ||
@@ -99,22 +120,17 @@ install() {
     ln -sf "$VENV_DIR/bin/handoff" "$BIN_DIR/handoff"
     say "Installed $("$VENV_DIR/bin/handoff" --version) in $BIN_DIR/handoff"
 
-    if [ -z "${HANDOFF_NO_SETUP:-}" ] && command -v claude >/dev/null 2>&1; then
-        "$VENV_DIR/bin/handoff" setup || say "Run 'handoff setup' later to register Handoff in Claude Code."
-    else
-        say "To connect an MCP client, run 'handoff setup' (Claude Code) or 'handoff setup --print-config'."
-    fi
     add_to_path
-    say "Done."
+    run_setup
+    say "Done. 'handoff doctor' shows how each AI tool is connected."
 }
 
 uninstall() {
     database=""
     if [ -x "$VENV_DIR/bin/handoff" ]; then
-        database="$("$VENV_DIR/bin/handoff" where 2>/dev/null | sed -n 's/^Database: *//p')" || true
-        if command -v claude >/dev/null 2>&1; then
-            "$VENV_DIR/bin/handoff" setup --remove || true
-        fi
+        database="$(HANDOFF_LANG=en "$VENV_DIR/bin/handoff" where 2>/dev/null | sed -n 's/^Database: *//p')" || true
+        "$VENV_DIR/bin/handoff" setup --remove --yes || true
+        "$VENV_DIR/bin/handoff" completion --uninstall >/dev/null 2>&1 || true
     fi
     if [ -L "$BIN_DIR/handoff" ]; then
         rm -f "$BIN_DIR/handoff"

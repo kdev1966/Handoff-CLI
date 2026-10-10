@@ -8,7 +8,8 @@
 # Environment variables:
 #   HANDOFF_VERSION=v0.1.0     tag or branch to install (default: main)
 #   HANDOFF_SOURCE=<pip spec>  install from this pip requirement instead (a folder, a wheel...)
-#   HANDOFF_NO_SETUP=1         do not register the MCP server in Claude Code
+#   HANDOFF_NO_SETUP=1         skip the setup assistant (run 'handoff setup' later)
+#   HANDOFF_SETUP_YES=1        connect every AI tool found, without questions
 #   HANDOFF_NO_MODIFY_PATH=1   do not add Handoff to your user PATH
 #   HANDOFF_UNINSTALL=1        uninstall instead of installing
 #
@@ -62,6 +63,7 @@ function Invoke-HandoffInstaller {
         Write-Host "Installing Handoff with $(& $python --version) from $source"
 
         New-Item -ItemType Directory -Force -Path $root | Out-Null
+        $isUpgrade = Test-Path $venvHandoff
         & $python -m venv --clear $venvDir
         if ($LASTEXITCODE -ne 0) {
             throw "Could not create the virtual environment in $venvDir. If an AI client is running Handoff, close it and run the installer again."
@@ -74,12 +76,6 @@ function Invoke-HandoffInstaller {
         Copy-Item -Force $venvHandoff $binHandoff
         Write-Host "Installed $(& $binHandoff --version) in $binHandoff"
 
-        if (-not $env:HANDOFF_NO_SETUP -and (Get-Command claude -ErrorAction SilentlyContinue)) {
-            & $binHandoff setup
-            if ($LASTEXITCODE -ne 0) { Write-Host "Run 'handoff setup' later to register Handoff in Claude Code." }
-        } else {
-            Write-Host "To connect an MCP client, run 'handoff setup' (Claude Code) or 'handoff setup --print-config'."
-        }
 
         $userPath = Get-UserPath
         if (($userPath -split ';') -notcontains $binDir) {
@@ -91,7 +87,21 @@ function Invoke-HandoffInstaller {
             }
         }
         $env:Path = "$env:Path;$binDir"
-        Write-Host 'Done.'
+
+        if ($env:HANDOFF_NO_SETUP) {
+            Write-Host "Run 'handoff setup' to connect Handoff to your AI tools."
+        } elseif ($isUpgrade -and -not $env:HANDOFF_SETUP_YES) {
+            & $binHandoff completion --refresh | Out-Null
+            Write-Host "Upgrade: your AI tools keep their configuration. Run 'handoff setup' to change it."
+        } elseif ($env:HANDOFF_SETUP_YES) {
+            & $binHandoff setup --yes
+        } elseif (-not [Console]::IsInputRedirected) {
+            & $binHandoff setup
+        } else {
+            Write-Host "No terminal to ask you: run 'handoff setup' to connect Handoff to your AI tools."
+        }
+        $global:LASTEXITCODE = 0  # a declined or partial setup is not an installation failure
+        Write-Host "Done. 'handoff doctor' shows how each AI tool is connected."
     }
 
     function Uninstall-Handoff {
@@ -99,10 +109,15 @@ function Invoke-HandoffInstaller {
         if (Test-Path $venvHandoff) {
             # Read all the output before filtering: stopping the pipeline early would close
             # the command's stdout while it is still writing.
+            $previousLang = $env:HANDOFF_LANG
+            $env:HANDOFF_LANG = 'en'  # the line parsed below is in English
             $output = @(& $venvHandoff where 2>$null)
+            $env:HANDOFF_LANG = $previousLang
             $line = $output | Where-Object { $_ -like 'Database:*' } | Select-Object -First 1
             if ($line) { $database = $line -replace '^Database:\s*', '' }
-            if (Get-Command claude -ErrorAction SilentlyContinue) { & $venvHandoff setup --remove }
+            & $venvHandoff setup --remove --yes
+            & $venvHandoff completion --uninstall | Out-Null
+            $global:LASTEXITCODE = 0
         }
         foreach ($dir in @($venvDir, $binDir)) {
             if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }

@@ -11,10 +11,10 @@ from pathlib import Path
 from ai_handoff import paths
 from ai_handoff.errors import HandoffError, NotFoundError, PausedError, ValidationError
 from ai_handoff.i18n import t
-from ai_handoff.project import Project, git_context
+from ai_handoff.project import Project, git_context, git_fingerprint
 from ai_handoff.redact import redact
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MAX_FIELD_BYTES = 16 * 1024
 MAX_HISTORY = 100
 BUSY_TIMEOUT_SECONDS = 10
@@ -48,6 +48,16 @@ MIGRATIONS = {
     2: """
     ALTER TABLE handoffs ADD COLUMN git_branch TEXT;
     ALTER TABLE handoffs ADD COLUMN git_commit TEXT;
+    """,
+    # Working tree state the memory is up to date with, and the state for which the
+    # assistant was already asked to save a handoff (so it is asked only once).
+    3: """
+    CREATE TABLE IF NOT EXISTS project_state (
+        project_key          TEXT PRIMARY KEY,
+        baseline_fingerprint TEXT,
+        reminded_fingerprint TEXT,
+        updated_at           TEXT NOT NULL
+    );
     """,
 }
 
@@ -206,6 +216,29 @@ class Store:
         ).fetchall()
         return [Handoff(**dict(row)) for row in rows]
 
+    def fingerprints(self, key: str) -> tuple[str | None, str | None]:
+        """(baseline, reminded) working tree fingerprints of a project."""
+        row = self._conn.execute(
+            "SELECT baseline_fingerprint, reminded_fingerprint FROM project_state WHERE project_key = ?",
+            (key,),
+        ).fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+    def set_fingerprints(self, key: str, *, baseline: str | None, reminded: str | None) -> None:
+        with self._conn:
+            self._set_fingerprints(key, baseline, reminded)
+
+    def _set_fingerprints(self, key: str, baseline: str | None, reminded: str | None) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO project_state (project_key, baseline_fingerprint, reminded_fingerprint, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(project_key) DO UPDATE SET baseline_fingerprint = excluded.baseline_fingerprint,
+                reminded_fingerprint = excluded.reminded_fingerprint, updated_at = excluded.updated_at
+            """,
+            (key, baseline, reminded, _now()),
+        )
+
     def get_handoff(self, handoff_id: int) -> Handoff:
         row = self._conn.execute("SELECT * FROM handoffs WHERE id = ?", (handoff_id,)).fetchone()
         if not row:
@@ -273,12 +306,16 @@ class Store:
             raise NotFoundError(t("error.project_key_not_found", key=key))
         with self._conn:
             self._conn.execute("DELETE FROM projects WHERE key = ?", (key,))
+            self._conn.execute("DELETE FROM project_state WHERE project_key = ?", (key,))
         return record.handoffs
 
     def _append(self, project: Project, agent: str, **fields: object) -> Handoff:
         branch, commit = git_context(project.root)
+        fingerprint = git_fingerprint(project.root)
         with self._conn:
             self._upsert_project(project)
+            # The memory now describes the code as it is.
+            self._set_fingerprints(project.key, fingerprint, None)
             cursor = self._conn.execute(
                 """
                 INSERT INTO handoffs (project_key, agent, stack, summary, next_actions, redactions,
