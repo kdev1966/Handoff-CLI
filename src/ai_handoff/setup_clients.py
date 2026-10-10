@@ -28,23 +28,38 @@ def claude_code_command(scope: str) -> list[str]:
     return [claude, "mcp", "add", "--scope", scope, SERVER_NAME, "--", *server_command()]
 
 
+def claude_code_remove_command(scope: str) -> list[str]:
+    claude = shutil.which("claude") or "claude"
+    return [claude, "mcp", "remove", "--scope", scope, SERVER_NAME]
+
+
 def format_command(command: list[str]) -> str:
     return subprocess.list2cmdline(command) if sys.platform == "win32" else shlex.join(command)
 
 
-def setup_claude_code(scope: str, dry_run: bool) -> int:
-    command = claude_code_command(scope)
+def setup_claude_code(scope: str, dry_run: bool, remove: bool = False) -> int:
+    """Register (or with remove=True, unregister) the server in Claude Code.
+
+    Registering again replaces the previous entry, so re-running after an
+    upgrade or a reinstall keeps the command path up to date.
+    """
+    remove_command = claude_code_remove_command(scope)
+    add_command = claude_code_command(scope)
     if dry_run:
-        print(format_command(command))
+        print(format_command(remove_command if remove else add_command))
         return 0
     if not shutil.which("claude"):
         print("Claude Code ('claude') was not found on PATH.", file=sys.stderr)
         return 1
-    result = subprocess.run(command, check=False)
+
+    removed = subprocess.run(remove_command, capture_output=True, check=False).returncode == 0
+    if remove:
+        print(f"Removed '{SERVER_NAME}' from Claude Code." if removed else "Handoff was not registered.")
+        return 0
+    result = subprocess.run(add_command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
-        print(
-            f"Registration failed. If a server named '{SERVER_NAME}' already exists, remove it with "
-            f"'claude mcp remove {SERVER_NAME} --scope {scope}' and try again.",
-            file=sys.stderr,
-        )
-    return result.returncode
+        print(f"Registration in Claude Code failed:\n{result.stderr or result.stdout}", file=sys.stderr)
+        return result.returncode
+    action = "Updated" if removed else "Registered"
+    print(f"{action} '{SERVER_NAME}' in Claude Code ({scope} scope).")
+    return 0

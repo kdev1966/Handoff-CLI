@@ -147,7 +147,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     if args.print_config:
         print(mcp_config_json())
         return 0
-    return setup_claude_code(args.scope, args.dry_run)
+    return setup_claude_code(args.scope, args.dry_run, remove=args.remove)
 
 
 def cmd_where(args: argparse.Namespace) -> int:
@@ -213,6 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument(
         "--print-config", action="store_true", help="print a JSON config for other MCP clients"
     )
+    setup.add_argument("--remove", action="store_true", help="unregister the server from Claude Code")
 
     add("where", cmd_where, "show where Handoff stores its data")
     return parser

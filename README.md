@@ -27,23 +27,53 @@ Il fonctionne sous **Windows, macOS et Linux**, via le standard [MCP](https://mo
 
 ## Installation
 
-Python 3.10 ou plus est requis. Installez Handoff dans un environnement isolé :
+Une seule commande, qui sert aussi à mettre à jour. Python 3.10 ou plus doit être installé.
+
+**macOS / Linux :**
 
 ```bash
-pipx install git+https://github.com/kdev1966/Handoff-CLI
-# ou
-uv tool install git+https://github.com/kdev1966/Handoff-CLI
+curl -fsSL https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.sh | sh
 ```
 
-Une fois publié sur PyPI : `pipx install ai-handoff`.
+**Windows (PowerShell) :**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.ps1 | iex"
+```
+
+Le script :
+- installe Handoff dans un environnement virtuel privé, sans droits administrateur ni `sudo` ;
+- ajoute la commande `handoff` à votre `PATH` ;
+- enregistre le serveur dans Claude Code s'il est installé.
+
+Vous pouvez lire le script avant de l'exécuter : il est court et commenté. Variables utiles :
+
+| Variable | Effet |
+|---|---|
+| `HANDOFF_VERSION=v0.1.0` | installe une version précise (par défaut : `main`) |
+| `HANDOFF_NO_SETUP=1` | n'enregistre pas le serveur dans Claude Code |
+| `HANDOFF_NO_MODIFY_PATH=1` | ne modifie pas le `PATH` |
+
+**Désinstallation** (votre base de mémoire est conservée) :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.sh | sh -s -- --uninstall
+```
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "$env:HANDOFF_UNINSTALL=1; irm https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.ps1 | iex"
+```
+
+Si vous préférez un gestionnaire d'outils Python : `pipx install git+https://github.com/kdev1966/Handoff-CLI` ou `uv tool install git+https://github.com/kdev1966/Handoff-CLI`.
 
 ## Connecter vos assistants
 
-**Claude Code** (une seule commande) :
+**Claude Code** : le script d'installation s'en charge s'il trouve la commande `claude`. Sinon, ou après avoir installé Claude Code :
 
 ```bash
-handoff setup            # enregistre le serveur pour votre utilisateur
+handoff setup            # enregistre (ou met à jour) le serveur pour votre utilisateur
 handoff setup --dry-run  # affiche la commande sans l'exécuter
+handoff setup --remove   # retire le serveur de Claude Code
 ```
 
 **Autres clients MCP** (Cursor, VS Code / Copilot, Claude Desktop, Gemini CLI, Codex, Windsurf, Zed…) : générez la configuration et ajoutez-la dans le fichier de configuration MCP de votre client, en suivant sa documentation :
