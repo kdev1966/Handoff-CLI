@@ -17,7 +17,6 @@ from ai_handoff.context_file import context_path, remove_context, write_context
 from ai_handoff.errors import HandoffError
 from ai_handoff.i18n import t, tn
 from ai_handoff.project import Project, resolve_project
-from ai_handoff.setup_clients import mcp_config_json, setup_claude_code
 from ai_handoff.store import MAX_HISTORY, Handoff, Store
 
 
@@ -232,10 +231,38 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
+    from ai_handoff import setup_flow
+    from ai_handoff.integrations import mcp_config_json
+
     if args.print_config:
         print(mcp_config_json())
         return 0
-    return setup_claude_code(args.scope, args.dry_run, remove=args.remove)
+    interactive = sys.stdin.isatty()
+    if args.remove:
+        return setup_flow.run_remove(yes=args.yes, dry_run=args.dry_run, interactive=interactive)
+    return setup_flow.run_setup(
+        yes=args.yes,
+        names=args.client,
+        hooks=False if args.no_hooks else None,
+        dry_run=args.dry_run,
+        interactive=interactive,
+    )
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from ai_handoff import setup_flow
+
+    ui.console().print(setup_flow.doctor())
+    return 0
+
+
+def cmd_hook(args: argparse.Namespace) -> int:
+    from ai_handoff import hooks
+
+    output = hooks.run(args.client, args.event, sys.stdin.read())
+    if output:
+        sys.stdout.write(output + "\n")
+    return 0
 
 
 def cmd_where(args: argparse.Namespace) -> int:
@@ -329,10 +356,17 @@ def build_parser() -> argparse.ArgumentParser:
     add("render", cmd_render)
 
     setup = add("setup", cmd_setup, path=False)
-    setup.add_argument("--scope", choices=("user", "local", "project"), default="user", help=t("opt.scope"))
+    setup.add_argument("--yes", "-y", action="store_true", help=t("opt.setup_yes"))
+    setup.add_argument("--client", action="append", metavar="NAME", help=t("opt.client"))
+    setup.add_argument("--no-hooks", action="store_true", help=t("opt.no_hooks"))
     setup.add_argument("--dry-run", action="store_true", help=t("opt.dry_run"))
     setup.add_argument("--print-config", action="store_true", help=t("opt.print_config"))
     setup.add_argument("--remove", action="store_true", help=t("opt.remove"))
+
+    add("doctor", cmd_doctor, path=False)
+    hook = add("hook", cmd_hook, path=False)
+    hook.add_argument("client")
+    hook.add_argument("event", choices=("session-start", "stop"))
 
     add("where", cmd_where)
     add("serve", cmd_serve, path=False)
