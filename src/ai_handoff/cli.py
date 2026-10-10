@@ -1,7 +1,9 @@
 """Command-line interface: the same memory as the MCP server, plus views and administration."""
 
 import argparse
+import contextlib
 import json
+import os
 import sys
 from collections import Counter
 from dataclasses import asdict
@@ -348,3 +350,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except KeyboardInterrupt:
         return 130
+    except BrokenPipeError:
+        # The reader stopped early ('handoff log | head'): that is not an error. Point stdout
+        # at the null device so the final flush at exit does not fail again.
+        with contextlib.suppress(OSError, ValueError):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0

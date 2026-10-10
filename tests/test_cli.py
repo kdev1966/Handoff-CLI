@@ -190,3 +190,18 @@ def test_help_is_translated(capsys, monkeypatch) -> None:
     out = capsys.readouterr().out
     assert "utilisation" in out
     assert "historique des passations en graphe" in out
+
+
+def test_broken_pipe_is_not_an_error(capsys, monkeypatch) -> None:
+    def closed_pipe(*_args, **_kwargs):
+        raise BrokenPipeError
+
+    monkeypatch.setattr("ai_handoff.cli.cmd_where", closed_pipe)
+    assert main(["where"]) == 0
+
+
+def test_console_reports_broken_pipe_instead_of_exiting() -> None:
+    from ai_handoff import ui
+
+    with pytest.raises(BrokenPipeError):
+        ui.console().on_broken_pipe()
