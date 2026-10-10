@@ -1,9 +1,11 @@
 import io
 import json
+import subprocess
 import sys
 
 import pytest
 
+from ai_handoff import setup_clients
 from ai_handoff.cli import main
 from ai_handoff.context_file import context_path
 from ai_handoff.project import Project
@@ -89,6 +91,31 @@ def test_setup_print_config(capsys) -> None:
     config = json.loads(run(capsys, "setup", "--print-config")[1])
     server = config["mcpServers"]["handoff"]
     assert [server["command"], *server["args"]] == server_command()
+
+
+def test_setup_remove_dry_run(capsys) -> None:
+    code, out, _ = run(capsys, "setup", "--remove", "--dry-run")
+    assert code == 0
+    assert "mcp remove --scope user handoff" in out
+
+
+@pytest.mark.parametrize(("already_registered", "message"), [(False, "Registered"), (True, "Updated")])
+def test_setup_replaces_previous_registration(
+    capsys, monkeypatch: pytest.MonkeyPatch, already_registered: bool, message: str
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        succeeded = command[2] == "add" or already_registered
+        return subprocess.CompletedProcess(command, 0 if succeeded else 1, "", "")
+
+    monkeypatch.setattr(setup_clients.shutil, "which", lambda _name: "/usr/bin/claude")
+    monkeypatch.setattr(setup_clients.subprocess, "run", fake_run)
+    code, out, _ = run(capsys, "setup")
+    assert code == 0
+    assert [command[2] for command in calls] == ["remove", "add"]
+    assert out.startswith(message)
 
 
 def test_setup_dry_run_does_not_execute(capsys) -> None:
