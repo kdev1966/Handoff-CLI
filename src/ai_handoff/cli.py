@@ -1,15 +1,22 @@
-"""Command-line interface: the same memory as the MCP server, plus administration."""
+"""Command-line interface: the same memory as the MCP server, plus views and administration."""
 
 import argparse
+import json
 import sys
+from collections import Counter
+from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ai_handoff import __version__, paths
+from rich.text import Text
+
+from ai_handoff import __version__, activity, paths, ui, views
 from ai_handoff.context_file import context_path, remove_context, write_context
 from ai_handoff.errors import HandoffError
+from ai_handoff.i18n import t, tn
 from ai_handoff.project import Project, resolve_project
 from ai_handoff.setup_clients import mcp_config_json, setup_claude_code
-from ai_handoff.store import MAX_HISTORY, Store
+from ai_handoff.store import MAX_HISTORY, Handoff, Store
 
 
 def _project(path: str | None) -> Project:
@@ -19,6 +26,18 @@ def _project(path: str | None) -> Project:
 def _read_value(value: str | None) -> str | None:
     """'-' reads the value from standard input, for multi-line text."""
     return sys.stdin.read() if value == "-" else value
+
+
+def _print_json(data: object) -> None:
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def _project_json(project: Project) -> dict[str, str]:
+    return {"key": project.key, "name": project.name, "root": str(project.root)}
+
+
+def _say(message: str, style: str = "") -> None:
+    ui.console().print(Text(message, style=style))
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -33,15 +52,22 @@ def cmd_show(args: argparse.Namespace) -> int:
     with Store() as store:
         paused = store.is_paused(project.key)
         handoff = store.latest(project.key)
-    status = " (paused)" if paused else ""
-    print(f"Project: {project.name}{status}\nKey:     {project.key}\nRoot:    {project.root}\n")
-    print(handoff.to_text() if handoff else "No handoff saved yet.")
+    if args.json:
+        _print_json(
+            {
+                "project": _project_json(project),
+                "paused": paused,
+                "handoff": asdict(handoff) if handoff else None,
+            }
+        )
+        return 0
+    ui.console().print(views.show(project, paused, handoff))
     return 0
 
 
 def cmd_save(args: argparse.Namespace) -> int:
     if [args.summary, args.next, args.stack].count("-") > 1:
-        raise HandoffError("Only one of --summary, --next and --stack can be read from stdin ('-').")
+        raise HandoffError(t("error.stdin_once"))
     project = _project(args.path)
     with Store() as store:
         handoff = store.save(
@@ -52,20 +78,79 @@ def cmd_save(args: argparse.Namespace) -> int:
             agent=args.agent,
         )
     write_context(project, handoff)
-    print(f"Saved handoff #{handoff.id} for {project.name}.")
+    _say(t("save.done", id=handoff.id, project=project.name), "success")
     if handoff.redactions:
-        print(f"{handoff.redactions} secret-looking value(s) were masked.")
+        _say(tn("show.redactions", handoff.redactions), "warning")
     return 0
 
 
-def cmd_history(args: argparse.Namespace) -> int:
+def _history(args: argparse.Namespace) -> tuple[Project, list[Handoff]]:
     project = _project(args.path)
     with Store() as store:
-        handoffs = store.history(project.key, limit=args.limit)
-    if not handoffs:
-        print(f"No handoff saved yet for {project.name}.")
+        return project, store.history(project.key, limit=args.limit)
+
+
+def cmd_history(args: argparse.Namespace) -> int:
+    project, handoffs = _history(args)
+    if args.json:
+        _print_json({"project": _project_json(project), "handoffs": [asdict(h) for h in handoffs]})
+    elif not handoffs:
+        _say(t("show.no_handoff"), "muted")
+    else:
+        ui.console().print(views.history(handoffs))
+    return 0
+
+
+def cmd_log(args: argparse.Namespace) -> int:
+    project, handoffs = _history(args)
+    if args.json:
+        _print_json({"project": _project_json(project), "handoffs": [asdict(h) for h in handoffs]})
+    elif not handoffs:
+        _say(t("show.no_handoff"), "muted")
+    else:
+        console = ui.console()
+        console.print(views.log(handoffs, args.by, console.width), soft_wrap=True)
+    return 0
+
+
+def cmd_diff(args: argparse.Namespace) -> int:
+    project = _project(args.path)
+    with Store() as store:
+        if args.new is not None:
+            new = store.get_project_handoff(args.new, project)
+        else:
+            new = store.latest(project.key)
+        if args.old is not None:
+            old = store.get_project_handoff(args.old, project)
+        else:
+            recent = store.history(project.key, limit=2)
+            old = recent[1] if len(recent) == 2 else None
+    if new is None or old is None:
+        raise HandoffError(t("error.diff_needs_two"))
+    ui.console().print(views.diff(old, new))
+    return 0
+
+
+def cmd_stats(args: argparse.Namespace) -> int:
+    project = _project(args.path)
+    with Store() as store:
+        handoffs = store.all_handoffs(project.key)
+    if args.json:
+        today = datetime.now().astimezone().date()
+        _print_json(
+            {
+                "project": _project_json(project),
+                "handoffs": len(handoffs),
+                "agents": dict(Counter(h.agent for h in handoffs if not h.is_restore)),
+                "branches": dict(Counter(h.git_branch for h in handoffs if h.git_branch)),
+                "restores": sum(h.is_restore for h in handoffs),
+                "weekly": activity.weekly_counts(handoffs, views.STATS_WEEKS, today),
+                "first": handoffs[0].created_at if handoffs else None,
+                "last": handoffs[-1].created_at if handoffs else None,
+            }
+        )
         return 0
-    print("\n\n---\n\n".join(handoff.to_text() for handoff in handoffs))
+    ui.console().print(views.stats(project, handoffs, datetime.now().astimezone().date()))
     return 0
 
 
@@ -73,23 +158,24 @@ def cmd_render(args: argparse.Namespace) -> int:
     project = _project(args.path)
     with Store() as store:
         if store.is_paused(project.key):
-            raise HandoffError(f"Handoff is paused for {project.name}; run 'handoff resume' first.")
+            raise HandoffError(t("error.paused_render", project=project.name))
         handoff = store.latest(project.key)
     print(write_context(project, handoff))
     return 0
 
 
 def cmd_list(args: argparse.Namespace) -> int:
+    since = datetime.now(timezone.utc) - timedelta(weeks=views.LIST_WEEKS + 1)
     with Store() as store:
         records = store.list_projects()
-    if not records:
-        print("No project yet.")
+        recent = store.handoffs_since(since.isoformat(timespec="seconds"))
+    if args.json:
+        _print_json([asdict(record) for record in records])
         return 0
-    for record in records:
-        status = "paused" if record.paused else f"{record.handoffs} handoff(s)"
-        print(f"{record.name}  [{status}, last: {record.last_handoff_at or 'never'}]")
-        print(f"    key:  {record.key}")
-        print(f"    root: {record.root}")
+    if not records:
+        _say(t("list.empty"), "muted")
+        return 0
+    ui.console().print(views.projects(records, recent, datetime.now().astimezone().date()))
     return 0
 
 
@@ -98,7 +184,7 @@ def cmd_pause(args: argparse.Namespace) -> int:
     with Store() as store:
         store.set_paused(project, True)
     remove_context(project)
-    print(f"Paused {project.name}: assistants can no longer read or save its memory.")
+    _say(t("pause.done", project=project.name), "warning")
     return 0
 
 
@@ -109,7 +195,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         handoff = store.latest(project.key)
     if handoff:
         write_context(project, handoff)
-    print(f"Resumed {project.name}.")
+    _say(t("resume.done", project=project.name), "success")
     return 0
 
 
@@ -118,19 +204,19 @@ def cmd_purge(args: argparse.Namespace) -> int:
         if args.key:
             record = store.get_project(args.key)
             if not record:
-                raise HandoffError(f"No project with key {args.key!r}. See 'handoff list'.")
+                raise HandoffError(t("error.project_key_not_found", key=args.key))
             project = Project(key=record.key, root=Path(record.root), name=record.name)
         else:
             project = _project(args.path)
             if not store.get_project(project.key):
-                raise HandoffError(f"{project.name} has no memory to purge.")
-        if not args.yes and not _confirm(f"Delete the whole memory of {project.name} ({project.key})?"):
-            print("Cancelled.")
+                raise HandoffError(t("error.nothing_to_purge", project=project.name))
+        if not args.yes and not _confirm(t("purge.confirm", project=project.name, key=project.key)):
+            _say(t("purge.cancelled"), "muted")
             return 1
         count = store.purge(project.key)
     if project.root.is_dir():
         remove_context(project)
-    print(f"Purged {project.name}: {count} handoff(s) deleted.")
+    _say(t("purge.done", project=project.name) + " " + tn("count.deleted", count), "success")
     return 0
 
 
@@ -139,7 +225,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
     with Store() as store:
         handoff = store.restore(args.id, project)
     write_context(project, handoff)
-    print(f"Restored handoff #{args.id} as #{handoff.id} for {project.name}.")
+    _say(t("restore.done", old=args.id, new=handoff.id, project=project.name), "success")
     return 0
 
 
@@ -151,83 +237,114 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
 
 def cmd_where(args: argparse.Namespace) -> int:
-    print(f"Database:     {paths.db_path()}")
+    _say(f"{t('where.database')} {paths.db_path()}")
     try:
-        print(f"Context file: {context_path(_project(args.path))}")
+        _say(f"{t('where.context')} {context_path(_project(args.path))}")
     except HandoffError as exc:
-        print(f"Context file: (no project here: {exc})")
+        _say(f"{t('where.context')} ({t('where.no_project', reason=exc)})", "muted")
     return 0
 
 
 def _confirm(question: str) -> bool:
     try:
-        return input(f"{question} [y/N] ").strip().lower() in {"y", "yes", "o", "oui"}
+        answer = input(f"{question} {t('confirm.choices')} ")
     except EOFError:
         return False
+    return answer.strip().lower() in {"y", "yes", "o", "oui"}
+
+
+class _Formatter(argparse.HelpFormatter):
+    def add_usage(self, usage, actions, groups, prefix=None):  # type: ignore[no-untyped-def]
+        return super().add_usage(usage, actions, groups, prefix or t("help.usage"))
+
+
+def _localize(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser._positionals.title = t("help.positionals")
+    parser._optionals.title = t("help.options")
+    parser.add_argument("-h", "--help", action="help", help=t("help.help"))
+    return parser
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="handoff",
-        description="Shared, persistent memory that lets AI assistants hand work over to each other.",
+    parser = _localize(
+        argparse.ArgumentParser(
+            prog="handoff", description=t("help.description"), formatter_class=_Formatter, add_help=False
+        )
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}", help=t("help.version")
+    )
+    sub = parser.add_subparsers(
+        dest="command", required=True, metavar=t("help.command"), title=t("help.commands")
+    )
 
-    def add(name: str, func, help: str, *, path: bool = True) -> argparse.ArgumentParser:
-        command = sub.add_parser(name, help=help, description=help)
+    def add(name: str, func, *, path: bool = True, json: bool = False) -> argparse.ArgumentParser:
+        text = t(f"cmd.{name}")
+        command = _localize(
+            sub.add_parser(name, help=text, description=text, formatter_class=_Formatter, add_help=False)
+        )
         command.set_defaults(func=func)
         if path:
-            command.add_argument("--path", "-p", help="project folder (default: current directory)")
+            command.add_argument("--path", "-p", help=t("opt.path"))
+        if json:
+            command.add_argument("--json", action="store_true", help=t("opt.json"))
         return command
 
-    add("serve", cmd_serve, "run the MCP server over stdio (used by AI clients)", path=False)
-    add("show", cmd_show, "show the latest handoff of a project")
+    add("show", cmd_show, json=True)
 
-    save = add("save", cmd_save, "save a handoff (for assistants without MCP); '-' reads stdin")
-    save.add_argument("--summary", "-s", required=True, help="current state of the work")
-    save.add_argument("--next", "-n", default="", help="next actions for whoever continues")
-    save.add_argument("--stack", help="tech stack (default: keep the previous one)")
-    save.add_argument("--agent", "-a", default="cli", help="who is saving (default: cli)")
+    log = add("log", cmd_log, json=True)
+    log.add_argument("--limit", "-l", type=int, default=20, choices=range(1, MAX_HISTORY + 1), metavar="N")
+    log.add_argument("--by", choices=("agent", "branch"), default="agent", help=t("opt.by"))
 
-    history = add("history", cmd_history, "list previous handoffs, newest first")
+    history = add("history", cmd_history, json=True)
     history.add_argument(
         "--limit", "-l", type=int, default=10, choices=range(1, MAX_HISTORY + 1), metavar="N"
     )
 
-    add("render", cmd_render, "regenerate .handoff/context.md")
-    add("list", cmd_list, "list every project with a memory", path=False)
-    add("pause", cmd_pause, "stop tracking a project (confidential work)")
-    add("resume", cmd_resume, "resume tracking a paused project")
+    diff = add("diff", cmd_diff)
+    diff.add_argument("old", type=int, nargs="?", help=t("opt.diff_old"))
+    diff.add_argument("new", type=int, nargs="?", help=t("opt.diff_new"))
 
-    purge = add("purge", cmd_purge, "delete a project's memory and history")
-    purge.add_argument("--key", help="purge by key (see 'handoff list'), e.g. for a deleted folder")
-    purge.add_argument("--yes", "-y", action="store_true", help="do not ask for confirmation")
+    add("stats", cmd_stats, json=True)
+    add("list", cmd_list, path=False, json=True)
 
-    restore = add("restore", cmd_restore, "make an older handoff the latest again")
-    restore.add_argument("id", type=int, help="handoff id (see 'handoff history')")
+    save = add("save", cmd_save)
+    save.add_argument("--summary", "-s", required=True, help=t("opt.summary"))
+    save.add_argument("--next", "-n", default="", help=t("opt.next"))
+    save.add_argument("--stack", help=t("opt.stack"))
+    save.add_argument("--agent", "-a", default="cli", help=t("opt.agent"))
 
-    setup = add("setup", cmd_setup, "register the MCP server with Claude Code", path=False)
-    setup.add_argument("--scope", choices=("user", "local", "project"), default="user")
-    setup.add_argument("--dry-run", action="store_true", help="print the command without running it")
-    setup.add_argument(
-        "--print-config", action="store_true", help="print a JSON config for other MCP clients"
-    )
-    setup.add_argument("--remove", action="store_true", help="unregister the server from Claude Code")
+    restore = add("restore", cmd_restore)
+    restore.add_argument("id", type=int, help=t("opt.restore_id"))
 
-    add("where", cmd_where, "show where Handoff stores its data")
+    add("pause", cmd_pause)
+    add("resume", cmd_resume)
+
+    purge = add("purge", cmd_purge)
+    purge.add_argument("--key", help=t("opt.key"))
+    purge.add_argument("--yes", "-y", action="store_true", help=t("opt.yes"))
+
+    add("render", cmd_render)
+
+    setup = add("setup", cmd_setup, path=False)
+    setup.add_argument("--scope", choices=("user", "local", "project"), default="user", help=t("opt.scope"))
+    setup.add_argument("--dry-run", action="store_true", help=t("opt.dry_run"))
+    setup.add_argument("--print-config", action="store_true", help=t("opt.print_config"))
+    setup.add_argument("--remove", action="store_true", help=t("opt.remove"))
+
+    add("where", cmd_where)
+    add("serve", cmd_serve, path=False)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(errors="replace")  # never crash on a console that cannot print a character
+    ui.configure_streams()
+    ui.reset()
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
     except HandoffError as exc:
-        print(f"handoff: error: {exc}", file=sys.stderr)
+        ui.error_console().print(Text(f"handoff: {t('error.prefix')} {exc}", style="error"))
         return 1
     except KeyboardInterrupt:
         return 130

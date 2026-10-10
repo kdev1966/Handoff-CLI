@@ -98,17 +98,38 @@ Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL.
 
 | Commande | Rôle |
 |---|---|
-| `handoff show` | Affiche la mémoire du projet courant |
-| `handoff save -s "état" -n "suite" [--stack "…"]` | Enregistre un passage de relais (`-` lit l'entrée standard) |
-| `handoff history [-l N]` | Historique, du plus récent au plus ancien |
-| `handoff restore ID` | Rétablit un ancien passage de relais comme le plus récent |
-| `handoff list` | Liste tous les projets suivis |
+| `handoff show` | Affiche la dernière passation du projet courant, dans un panneau en Markdown |
+| `handoff log [-l N] [--by agent\|branch]` | Historique en graphe, comme `git log --graph`, avec un couloir par agent ou par branche git |
+| `handoff diff [ANCIEN] [NOUVEAU]` | Compare deux passations mot à mot (par défaut : les deux dernières) |
+| `handoff stats` | Carte d'activité sur 12 semaines, répartition par agent et par branche |
+| `handoff list` | Tous les projets, avec dernier agent, mini-courbe d'activité et statut (actif, inactif, en pause) |
+| `handoff history [-l N]` | Passations précédentes en détail |
+| `handoff save -s "état" -n "suite" [--stack "…"]` | Enregistre une passation (`-` lit l'entrée standard) |
+| `handoff restore ID` | Rétablit une ancienne passation comme la plus récente |
 | `handoff pause` / `handoff resume` | Suspend ou reprend le suivi d'un projet (travail confidentiel) |
 | `handoff purge [--key KEY] [-y]` | Supprime toute la mémoire d'un projet |
 | `handoff render` | Régénère `.handoff/context.md` |
 | `handoff where` | Indique où sont stockées les données |
 
-Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé avec `--path`.
+Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé avec `--path`. `show`, `log`, `history`, `stats` et `list` acceptent `--json` pour les scripts.
+
+Chaque passation enregistre la branche git et le commit courants : ils apparaissent dans `show`, `log` et `diff`.
+
+```text
+● claude-code   ● copilot   ● gemini-cli
+
+●      #8  claude-code  hier            main @ 116d129          Refacto du middleware
+╰─╮
+  ●    #6  copilot      28 sept.        main @ 116d129          Fusion de feature/auth
+  ╰─╮
+    ●  #5  gemini-cli   19 sept.        feature/auth @ 116d129  Tests d'intégration écrits
+```
+
+### Couleurs et langue
+
+- **Couleurs** : chaque agent a une couleur fixe, toujours accompagnée de son nom. La palette reste lisible par les daltoniens, sur fond clair comme sur fond sombre. Les couleurs sont désactivées quand la sortie n'est pas un terminal ou quand `NO_COLOR` est défini ; `FORCE_COLOR=1` les force. Sans couleur, `diff` marque les changements comme `git diff --word-diff` : `[-supprimé-]{+ajouté+}`.
+- **Consoles anciennes** : sur une console qui ne gère pas l'UTF-8, les symboles sont remplacés par des équivalents ASCII.
+- **Langue** : l'interface est en français ou en anglais selon votre système (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`, puis la langue de macOS ou de Windows). `HANDOFF_LANG=fr` ou `HANDOFF_LANG=en` impose une langue. Ce que lisent les IA (outils MCP, `.handoff/context.md`) reste en anglais.
 
 ### Assistants sans MCP
 

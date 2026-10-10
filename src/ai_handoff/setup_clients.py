@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 
+from ai_handoff.i18n import t
+
 SERVER_NAME = "handoff"
 
 
@@ -49,17 +51,16 @@ def setup_claude_code(scope: str, dry_run: bool, remove: bool = False) -> int:
         print(format_command(remove_command if remove else add_command))
         return 0
     if not shutil.which("claude"):
-        print("Claude Code ('claude') was not found on PATH.", file=sys.stderr)
+        print(t("setup.claude_missing"), file=sys.stderr)
         return 1
 
     removed = subprocess.run(remove_command, capture_output=True, check=False).returncode == 0
     if remove:
-        print(f"Removed '{SERVER_NAME}' from Claude Code." if removed else "Handoff was not registered.")
+        print(t("setup.removed") if removed else t("setup.not_registered"))
         return 0
     result = subprocess.run(add_command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
-        print(f"Registration in Claude Code failed:\n{result.stderr or result.stdout}", file=sys.stderr)
+        print(t("setup.failed", details=result.stderr or result.stdout), file=sys.stderr)
         return result.returncode
-    action = "Updated" if removed else "Registered"
-    print(f"{action} '{SERVER_NAME}' in Claude Code ({scope} scope).")
+    print(t("setup.updated" if removed else "setup.registered", scope=scope))
     return 0

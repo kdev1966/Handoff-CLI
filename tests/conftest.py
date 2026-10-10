@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_handoff import i18n, ui
 from ai_handoff.project import Project, resolve_project
 
 
@@ -14,6 +15,18 @@ def handoff_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "handoff-data"
     monkeypatch.setenv("HANDOFF_HOME", str(home))
     return home
+
+
+@pytest.fixture(autouse=True)
+def english(monkeypatch: pytest.MonkeyPatch):
+    """Tests run in English with plain output unless they say otherwise."""
+    monkeypatch.setenv("HANDOFF_LANG", "en")
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    i18n.set_language(None)
+    ui.reset()
+    yield
+    i18n.set_language(None)
+    ui.reset()
 
 
 @pytest.fixture
