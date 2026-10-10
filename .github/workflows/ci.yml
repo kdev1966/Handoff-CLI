@@ -60,6 +60,8 @@ jobs:
       - name: Install, upgrade and uninstall (sh)
         if: runner.os != 'Windows'
         run: |
+          # Runners already have ~/.local/bin on PATH; drop it so the profile update is exercised.
+          export PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vx "$HOME/.local/bin" | paste -sd: -)"
           sh install.sh
           "$HOME/.local/bin/handoff" --version
           sh install.sh
