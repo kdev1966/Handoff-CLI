@@ -1,0 +1,69 @@
+name: 🚀 Handoff-CLI Production Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Se déclenche uniquement lors de la création d'un tag de version (ex: v1.0.0)
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Requis pour permettre au script de publier la release sur votre dépôt
+
+    steps:
+      # 1. Récupération du code source depuis GitHub
+      - name: 📥 Check out repository code
+        uses: actions/checkout@v4
+
+      # 2. Configuration de l'environnement Python pour valider le gestionnaire
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Étape de validation de la syntaxe du code (Linter)
+      - name: 🛡️ Lint and Syntax Check (Python & Bash)
+        run: |
+          # Vérification de la syntaxe Python
+          python -m py_compile bin/mcp-dev-manager
+          # Vérification basique de la syntaxe Bash
+          bash -n bin/mcp-init
+          bash -n install.sh
+          echo "✅ Tous les scripts sont valides syntaxiquement !"
+
+      # 4. Création de l'archive de production épurée (.zip)
+      - name: 📦 Package Artifacts into ZIP
+        run: |
+          mkdir -p dist
+          # L'option -j permet de mettre les fichiers à la racine du zip sans les dossiers 'bin/'
+          zip -j dist/handoff-cli-artifacts.zip bin/mcp-init bin/mcp-dev-manager install.sh
+          echo "✅ Archive dist/handoff-cli-artifacts.zip créée avec succès."
+
+      # 5. Publication automatique de la Release officielle sur GitHub
+      - name: 🚀 Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 🔀 Handoff-CLI Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref }}
+          body: |
+            ## 🔀 Handoff-CLI - Version ${{ github.ref_name }}
+            
+            Une nouvelle version stable de **Handoff-CLI** est disponible !
+            
+            ### 🛠️ Changements inclus
+            - Validation automatique des scripts de production.
+            - Empaquetage des binaires d'exécution.
+            
+            ### 🚀 Comment mettre à jour / Installer ?
+            Exécutez simplement la commande globale dans votre terminal :
+            ```bash
+            curl -sSf https://githubusercontent.com\${{ github.repository }}/main/install.sh | sh
+            ```
+          draft: false
+          prerelease: false
+          files: |
+            dist/handoff-cli-artifacts.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Jeton temporaire fourni automatiquement par GitHub
