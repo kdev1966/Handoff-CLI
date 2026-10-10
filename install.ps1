@@ -97,7 +97,10 @@ function Invoke-HandoffInstaller {
     function Uninstall-Handoff {
         $database = $null
         if (Test-Path $venvHandoff) {
-            $line = & $venvHandoff where 2>$null | Where-Object { $_ -like 'Database:*' } | Select-Object -First 1
+            # Read all the output before filtering: stopping the pipeline early would close
+            # the command's stdout while it is still writing.
+            $output = @(& $venvHandoff where 2>$null)
+            $line = $output | Where-Object { $_ -like 'Database:*' } | Select-Object -First 1
             if ($line) { $database = $line -replace '^Database:\s*', '' }
             if (Get-Command claude -ErrorAction SilentlyContinue) { & $venvHandoff setup --remove }
         }

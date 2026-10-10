@@ -81,6 +81,14 @@ ASCII_GLYPHS = {
 # C0 and C1 control characters, except tab and newline.
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
+
+class _Console(Console):
+    def on_broken_pipe(self) -> None:
+        # Rich exits with status 1 here; let the CLI treat an early-closing reader as success.
+        self.quiet = True
+        raise BrokenPipeError
+
+
 _console: Console | None = None
 _error_console: Console | None = None
 
@@ -88,14 +96,14 @@ _error_console: Console | None = None
 def console() -> Console:
     global _console
     if _console is None:
-        _console = Console(theme=THEME, highlight=False)
+        _console = _Console(theme=THEME, highlight=False)
     return _console
 
 
 def error_console() -> Console:
     global _error_console
     if _error_console is None:
-        _error_console = Console(theme=THEME, highlight=False, stderr=True)
+        _error_console = _Console(theme=THEME, highlight=False, stderr=True)
     return _error_console
 
 
