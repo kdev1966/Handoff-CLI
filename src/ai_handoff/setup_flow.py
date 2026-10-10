@@ -16,7 +16,7 @@ from ai_handoff.integrations import INTEGRATIONS, Integration, Outcome
 
 
 def _say(message: str, style: str = "") -> None:
-    ui.console().print(Text(message, style=style))
+    ui.console().print(Text(message, style=style), soft_wrap=True)
 
 
 def ask_yes(question: str, default: bool = True) -> bool:
@@ -147,8 +147,8 @@ def doctor() -> Table:
         state = (
             integrations.status(integration) if not integration.manual else dict.fromkeys(integrations.KINDS)
         )
-        if integration.name not in found and not any(state.values()):
-            continue
+        if integration.name not in found and not state["mcp"]:
+            continue  # not installed here, and not connected either
         notes = []
         if integration.manual:
             notes.append(t("setup.manual", reason=integration.manual))

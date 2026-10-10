@@ -38,7 +38,8 @@ def _project_json(project: Project) -> dict[str, str]:
 
 
 def _say(message: str, style: str = "") -> None:
-    ui.console().print(Text(message, style=style))
+    # Never wrap messages: paths stay on one line, for copying and for scripts.
+    ui.console().print(Text(message, style=style), soft_wrap=True)
 
 
 def cmd_serve(args: argparse.Namespace) -> int:

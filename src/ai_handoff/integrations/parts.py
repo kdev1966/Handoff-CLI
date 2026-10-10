@@ -195,14 +195,15 @@ class JsonHooks(Part):
         if hooks is None:
             return
         changed = False
-        for event in list(hooks):
-            if isinstance(hooks[event], list) and any(_is_ours(item) for item in hooks[event]):
+        for event in self.entries:
+            if isinstance(hooks.get(event), list) and any(_is_ours(item) for item in hooks[event]):
                 hooks[event] = [item for item in hooks[event] if not _is_ours(item)]
                 changed = True
                 if not hooks[event]:
                     del hooks[event]
         if changed:
-            session.write_text(self.path, dump_json(data), f"{self.path}: removed Handoff hooks")
+            events = ", ".join(self.entries)
+            session.write_text(self.path, dump_json(data), f"{self.path}: removed hooks {events}")
 
     def present(self) -> bool:
         try:
