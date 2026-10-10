@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-handoff"
+dynamic = ["version"]
+description = "Shared, persistent memory that lets AI assistants hand work over to each other, through MCP."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "kdev1966" }]
+keywords = ["mcp", "model-context-protocol", "ai", "agents", "memory", "handoff", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development",
+]
+dependencies = ["mcp>=2.3,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "anyio>=4.9", "ruff>=0.15"]
+
+[project.scripts]
+handoff = "ai_handoff.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/kdev1966/Handoff-CLI"
+Issues = "https://github.com/kdev1966/Handoff-CLI/issues"
+
+[tool.hatch.version]
+path = "src/ai_handoff/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_handoff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["S603", "S607"]  # subprocess calls use fixed argument lists, never a shell
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S108"]
