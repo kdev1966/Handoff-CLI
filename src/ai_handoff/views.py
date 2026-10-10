@@ -331,3 +331,50 @@ def projects(
             status,
         )
     return table
+
+
+WELCOME_GROUPS = (
+    ("welcome.browse", ("show", "log", "diff", "stats", "list", "history")),
+    ("welcome.record", ("save", "restore")),
+    ("welcome.manage", ("pause", "resume", "purge", "render", "where")),
+    ("welcome.configure", ("setup", "doctor", "completion")),
+)
+
+
+def welcome(
+    version: str,
+    project: Project | None,
+    paused: bool,
+    count: int,
+    last: Handoff | None,
+    now: datetime | None = None,
+) -> Group:
+    """What 'handoff' alone shows: the state of the current project, then the commands by use."""
+    title = Text("Handoff", style="title")
+    title.append(f" {version}  ", style="muted")
+    title.append(t("help.description"), style="muted")
+
+    if project is None:
+        status = Text(t("welcome.no_project"), style="muted")
+    else:
+        status = Text(ui.safe(project.name), style="bold")
+        if paused:
+            status.append(f"  {t('status.paused')}", style="warning")
+        elif last is None:
+            status.append(f"  {t('welcome.empty')}", style="muted")
+        else:
+            status.append(f"  {tn('count.handoffs', count)} · ", style="muted")
+            status.append(t("welcome.last", when=ui.relative_time(last.created_at, now)), style="muted")
+            status.append(" ")
+            status.append_text(ui.agent_text(last.agent))
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(no_wrap=True)
+    grid.add_column()
+    for index, (label, names) in enumerate(WELCOME_GROUPS):
+        if index:
+            grid.add_row("", "")
+        grid.add_row(Text(t(label), style="label"), "")
+        for name in names:
+            grid.add_row(Text(f"  handoff {name}", style="bold"), Text(t(f"cmd.{name}"), style="muted"))
+    return Group(title, Text(), status, Text(), grid, Text(), Text(t("welcome.footer"), style="muted"))

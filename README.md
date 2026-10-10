@@ -140,6 +140,12 @@ Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL.
 
 ## CLI
 
+Handoff s'utilise comme `git` : on tape `handoff <commande>` dans le terminal. Ce n'est pas une session interactive avec des commandes `/` comme Claude Code.
+
+- **`handoff`** seul affiche l'état du projet courant et toutes les commandes, regroupées par usage (Consulter, Enregistrer, Gérer, Configurer).
+- **`handoff <commande> --help`** détaille les options d'une commande.
+- **Touche Tab** : l'autocomplétion complète les commandes, les options et leurs valeurs (`handoff l` puis Tab propose `log` et `list` ; `--by` puis Tab propose `agent` et `branch`). Elle fonctionne avec zsh, bash et PowerShell. Elle est installée d'office en mode automatique et proposée en mode manuel ; sinon, `handoff completion --install` l'installe et `handoff completion --uninstall` la retire. Le script est écrit une fois dans le dossier de données, et votre profil shell ne fait que le charger : aucun ralentissement à l'ouverture du terminal.
+
 | Commande | Rôle |
 |---|---|
 | `handoff show` | Affiche la dernière passation du projet courant, dans un panneau en Markdown |
@@ -154,6 +160,7 @@ Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL.
 | `handoff purge [--key KEY] [-y]` | Supprime toute la mémoire d'un projet |
 | `handoff render` | Régénère `.handoff/context.md` |
 | `handoff where` | Indique où sont stockées les données |
+| `handoff completion [--install\|--uninstall]` | Autocomplétion avec Tab (zsh, bash, PowerShell) |
 
 Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé avec `--path`. `show`, `log`, `history`, `stats` et `list` acceptent `--json` pour les scripts.
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_handoff import integrations
+from ai_handoff import completion, integrations
 from ai_handoff.cli import main
 from ai_handoff.integrations import clients, files, parts
 from ai_handoff.integrations.files import BLOCK_BEGIN, ConfigError, Session
@@ -26,6 +26,7 @@ def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(parts.shutil, "which", lambda _name: None)
     monkeypatch.setattr(clients.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(completion, "detect_shell", lambda: None)  # tests that want a shell set it
     return home
 
 
@@ -349,3 +350,33 @@ def test_setup_unknown_client(capsys) -> None:
     code, out = run_cli(capsys, "setup", "--yes", "--client", "nope")
     assert code == 1
     assert "Unknown tool: nope" in out
+
+
+def test_setup_automatic_installs_completion(
+    capsys, fake_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (fake_home / ".cursor").mkdir()
+    monkeypatch.setattr(completion, "detect_shell", lambda: "zsh")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
+    code, out = run_cli(capsys, "setup")
+    assert code == 0
+    assert completion.PROFILE_MARKER in (fake_home / ".zshrc").read_text(encoding="utf-8")
+    assert "Tab completion installed for zsh" in out
+
+
+def test_setup_manual_asks_for_completion(capsys, fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (fake_home / ".cursor").mkdir()
+    monkeypatch.setattr(completion, "detect_shell", lambda: "zsh")
+    prompts: list[str] = []
+    answers = iter(["2", "1", "", "n", ""])  # manual, all tools, hooks yes, completion no, apply
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr("builtins.input", answer)
+    monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
+    assert run_cli(capsys, "setup")[0] == 0
+    assert any("Tab completion" in prompt for prompt in prompts)
+    assert not (fake_home / ".zshrc").exists()

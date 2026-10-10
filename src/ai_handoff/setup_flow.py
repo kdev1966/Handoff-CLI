@@ -9,7 +9,7 @@ from rich import box
 from rich.table import Table
 from rich.text import Text
 
-from ai_handoff import integrations, paths, ui
+from ai_handoff import completion, integrations, paths, ui
 from ai_handoff.errors import HandoffError
 from ai_handoff.i18n import t, tn
 from ai_handoff.integrations import INTEGRATIONS, Integration, Outcome
@@ -79,6 +79,9 @@ def run_setup(
     _say(t("setup.detected", clients=", ".join(integration.label for integration in chosen)), "bold")
 
     automatic = False
+    # Tab completion goes with a full setup, not with a run targeting some tools.
+    shell = completion.detect_shell() if not names else None
+    want_completion = shell is not None and not completion.installed(shell)
     if not yes and not dry_run:
         if not interactive:
             _say(t("setup.non_interactive"), "warning")
@@ -96,12 +99,16 @@ def run_setup(
                 chosen = [item for item in chosen if ask_yes(t("setup.ask_client", client=item.label))]
             if hooks is None:
                 hooks = ask_yes(t("setup.ask_hooks"))
+            if want_completion:
+                want_completion = ask_yes(t("setup.ask_completion", shell=shell))
     hooks = True if hooks is None else hooks
 
     preview = integrations.apply(chosen, hooks=hooks, dry_run=True)
     if not any(outcome.changes for outcome in preview):
         _print_outcomes(preview, preview=True)
         _say(t("setup.nothing_to_do"), "success")
+        if want_completion and not dry_run:
+            _install_completion(shell)
         return 0
     if not automatic:
         _say(t("setup.planned"), "bold")
@@ -115,9 +122,24 @@ def run_setup(
     outcomes = integrations.apply(chosen, hooks=hooks, dry_run=False)
     _say(t("setup.done"), "bold")
     _print_outcomes(outcomes, preview=False)
+    if want_completion:
+        _install_completion(shell)
     _say(t("setup.backups", path=ui.short_path(str(paths.data_dir() / "backups"))), "muted")
     _say(t("setup.permissions_note"), "muted")
     return 1 if any(outcome.error for outcome in outcomes) else 0
+
+
+def _install_completion(shell: str | None) -> None:
+    from ai_handoff.cli import build_parser
+    from ai_handoff.integrations.files import Session
+
+    if shell is None:
+        return
+    try:
+        profile = completion.install(shell, build_parser(), Session())
+    except (FileNotFoundError, OSError):
+        return  # completion is a convenience; setup goes on without it
+    _say(f"  ✔ {t('completion.installed', shell=shell, profile=ui.short_path(str(profile)))}", "success")
 
 
 def run_remove(*, yes: bool, dry_run: bool, interactive: bool) -> int:

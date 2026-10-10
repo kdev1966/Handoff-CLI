@@ -87,6 +87,7 @@ run_setup() {
     if [ -n "${HANDOFF_NO_SETUP:-}" ]; then
         say "Run 'handoff setup' to connect Handoff to your AI tools."
     elif [ -n "$upgrade" ] && [ -z "${HANDOFF_SETUP_YES:-}" ]; then
+        "$VENV_DIR/bin/handoff" completion --refresh >/dev/null 2>&1 || true
         say "Upgrade: your AI tools keep their configuration. Run 'handoff setup' to change it."
     elif [ -n "${HANDOFF_SETUP_YES:-}" ]; then
         "$VENV_DIR/bin/handoff" setup --yes || true
@@ -129,6 +130,7 @@ uninstall() {
     if [ -x "$VENV_DIR/bin/handoff" ]; then
         database="$(HANDOFF_LANG=en "$VENV_DIR/bin/handoff" where 2>/dev/null | sed -n 's/^Database: *//p')" || true
         "$VENV_DIR/bin/handoff" setup --remove --yes || true
+        "$VENV_DIR/bin/handoff" completion --uninstall >/dev/null 2>&1 || true
     fi
     if [ -L "$BIN_DIR/handoff" ]; then
         rm -f "$BIN_DIR/handoff"

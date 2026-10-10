@@ -91,6 +91,7 @@ function Invoke-HandoffInstaller {
         if ($env:HANDOFF_NO_SETUP) {
             Write-Host "Run 'handoff setup' to connect Handoff to your AI tools."
         } elseif ($isUpgrade -and -not $env:HANDOFF_SETUP_YES) {
+            & $binHandoff completion --refresh | Out-Null
             Write-Host "Upgrade: your AI tools keep their configuration. Run 'handoff setup' to change it."
         } elseif ($env:HANDOFF_SETUP_YES) {
             & $binHandoff setup --yes
@@ -115,6 +116,7 @@ function Invoke-HandoffInstaller {
             $line = $output | Where-Object { $_ -like 'Database:*' } | Select-Object -First 1
             if ($line) { $database = $line -replace '^Database:\s*', '' }
             & $venvHandoff setup --remove --yes
+            & $venvHandoff completion --uninstall | Out-Null
             $global:LASTEXITCODE = 0
         }
         foreach ($dir in @($venvDir, $binDir)) {
