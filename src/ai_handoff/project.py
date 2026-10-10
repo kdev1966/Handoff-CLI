@@ -8,9 +8,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ai_handoff.errors import ProjectError
+from ai_handoff.i18n import t
 
 GIT_TIMEOUT_SECONDS = 5
 _SCP_LIKE = re.compile(r"^(?:[^@/\s]+@)?(?P<host>[^:/\s]+):(?P<path>[^\s]+)$")
+_COMMIT = re.compile(r"[0-9a-f]{7,64}")
+MAX_BRANCH_LENGTH = 255
 
 
 @dataclass(frozen=True)
@@ -84,10 +87,7 @@ def find_root(start: Path) -> Path:
 def check_safe_root(root: Path) -> None:
     home = Path.home().resolve()
     if root.parent == root or root == home or root in home.parents:
-        raise ProjectError(
-            f"Refusing to use {root} as a project: it is the home directory, a filesystem root, "
-            "or contains the home directory. Pass the path of the project folder itself."
-        )
+        raise ProjectError(t("error.unsafe_root", path=root))
 
 
 def resolve_project(path: str | os.PathLike[str]) -> Project:
@@ -98,16 +98,16 @@ def resolve_project(path: str | os.PathLike[str]) -> Project:
     it is the folder path.
     """
     if not str(path).strip():
-        raise ProjectError("A project path is required.")
+        raise ProjectError(t("error.path_required"))
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
-        raise ProjectError(f"The project path must be absolute, got {str(path)!r}.")
+        raise ProjectError(t("error.path_not_absolute", path=repr(str(path))))
     try:
         resolved = candidate.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
-        raise ProjectError(f"The project path does not exist: {candidate}") from exc
+        raise ProjectError(t("error.path_missing", path=candidate)) from exc
     if not resolved.is_dir():
-        raise ProjectError(f"The project path is not a directory: {resolved}")
+        raise ProjectError(t("error.path_not_dir", path=resolved))
 
     root = find_root(resolved)
     check_safe_root(root)
@@ -118,3 +118,22 @@ def resolve_project(path: str | os.PathLike[str]) -> Project:
         remote = normalize_remote(url) if url else None
     key = f"git:{remote}" if remote else f"path:{os.path.normcase(str(root))}"
     return Project(key=key, root=root, name=root.name)
+
+
+def git_context(root: Path) -> tuple[str | None, str | None]:
+    """Return (branch, commit) of the repository at root, or None for what is unknown.
+
+    A detached HEAD has no branch; a repository without commits has neither.
+    """
+    if not (root / ".git").exists():
+        return None, None
+    output = run_git(root, "rev-parse", "HEAD", "--abbrev-ref", "HEAD")
+    lines = output.splitlines() if output else []
+    if len(lines) != 2:
+        return None, None
+    commit, branch = (line.strip() for line in lines)
+    if not _COMMIT.fullmatch(commit):
+        commit = None
+    if branch == "HEAD" or not branch.isprintable() or len(branch) > MAX_BRANCH_LENGTH:
+        branch = None
+    return branch or None, commit

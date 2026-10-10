@@ -101,3 +101,10 @@ def test_dotfiles_repository_in_home_does_not_capture_projects(
     project_dir.mkdir(parents=True)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     assert resolve_project(project_dir).root == project_dir
+
+
+def test_git_context_without_commits_or_repository(make_repo, tmp_path: Path) -> None:
+    from ai_handoff.project import git_context
+
+    assert git_context(make_repo("empty")) == (None, None)
+    assert git_context(tmp_path) == (None, None)

@@ -10,6 +10,7 @@ from pydantic import Field
 from ai_handoff import __version__
 from ai_handoff.context_file import write_context
 from ai_handoff.errors import HandoffError
+from ai_handoff.i18n import set_language
 from ai_handoff.project import Project, resolve_project
 from ai_handoff.store import MAX_HISTORY, Store
 
@@ -125,4 +126,5 @@ def memory_history(
 
 
 def serve() -> None:
+    set_language("en")  # assistants always get English, whatever the user's locale
     mcp.run("stdio")

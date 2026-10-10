@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from ai_handoff import setup_clients
+from ai_handoff import i18n, setup_clients
 from ai_handoff.cli import main
 from ai_handoff.context_file import context_path
 from ai_handoff.project import Project
@@ -36,7 +36,9 @@ def test_save_show_history(capsys, project: Project) -> None:
 def test_save_reads_stdin(capsys, project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("line one\nline two\n"))
     run(capsys, "save", "-p", str(project.root), "-s", "-")
-    assert "line one\nline two" in run(capsys, "show", "-p", str(project.root))[1]
+    out = run(capsys, "show", "-p", str(project.root))[1]
+    assert "line one" in out
+    assert "line two" in out
 
 
 def test_default_path_is_current_directory(capsys, project: Project, monkeypatch) -> None:
@@ -69,7 +71,7 @@ def test_purge_requires_confirmation(capsys, project: Project, monkeypatch) -> N
     assert run(capsys, "purge", "-p", path)[0] == 1
     assert project.name in run(capsys, "list")[1]
     assert run(capsys, "purge", "-p", path, "--yes")[0] == 0
-    assert run(capsys, "list")[1].strip() == "No project yet."
+    assert run(capsys, "list")[1].startswith("No project yet.")
     assert not context_path(project).exists()
 
 
@@ -129,3 +131,62 @@ def test_version(capsys) -> None:
         main(["--version"])
     assert exc.value.code == 0
     assert "handoff" in capsys.readouterr().out
+
+
+def test_log_diff_stats(capsys, project: Project) -> None:
+    path = str(project.root)
+    run(capsys, "save", "-p", path, "-s", "tests pending", "-a", "claude-code")
+    run(capsys, "save", "-p", path, "-s", "tests green", "-a", "copilot")
+
+    code, out, _ = run(capsys, "log", "-p", path)
+    assert code == 0
+    assert out.index("copilot") < out.index("claude-code", out.index("copilot"))
+
+    code, out, _ = run(capsys, "diff", "-p", path)
+    assert code == 0
+    assert "[-pending-]" in out
+    assert "{+green+}" in out
+
+    code, out, _ = run(capsys, "stats", "-p", path)
+    assert code == 0
+    assert "2 handoffs" in out
+
+
+def test_diff_needs_two_handoffs(capsys, project: Project) -> None:
+    run(capsys, "save", "-p", str(project.root), "-s", "only one")
+    code, _, err = run(capsys, "diff", "-p", str(project.root))
+    assert code == 1
+    assert "Two handoffs are needed" in err
+
+
+@pytest.mark.parametrize("command", ["show", "history", "log", "stats"])
+def test_json_output(capsys, project: Project, command: str) -> None:
+    run(capsys, "save", "-p", str(project.root), "-s", "state", "-a", "codex")
+    data = json.loads(run(capsys, command, "-p", str(project.root), "--json")[1])
+    assert data["project"]["key"] == project.key
+
+
+def test_list_json(capsys, project: Project) -> None:
+    run(capsys, "save", "-p", str(project.root), "-s", "state", "-a", "codex")
+    data = json.loads(run(capsys, "list", "--json")[1])
+    assert data[0]["last_agent"] == "codex"
+
+
+def test_french_cli(capsys, project: Project, monkeypatch) -> None:
+    monkeypatch.setenv("HANDOFF_LANG", "fr")
+    i18n.set_language(None)
+    code, out, _ = run(capsys, "save", "-p", str(project.root), "-s", "état")
+    assert code == 0
+    assert "Passation #1 enregistrée" in out
+    code, _, err = run(capsys, "save", "-p", str(project.root), "-s", " ")
+    assert "erreur" in err
+
+
+def test_help_is_translated(capsys, monkeypatch) -> None:
+    monkeypatch.setenv("HANDOFF_LANG", "fr")
+    i18n.set_language(None)
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    assert "utilisation" in out
+    assert "historique des passations en graphe" in out

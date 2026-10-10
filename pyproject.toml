@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Software Development",
 ]
-dependencies = ["mcp>=2.3,<3"]
+dependencies = ["mcp>=2.3,<3", "rich>=13.7,<16"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "anyio>=4.9", "ruff>=0.15"]
@@ -55,3 +55,4 @@ ignore = ["S603", "S607"]  # subprocess calls use fixed argument lists, never a 
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S108"]
+"src/ai_handoff/locales.py" = ["E501"]  # whole sentences read better on one line

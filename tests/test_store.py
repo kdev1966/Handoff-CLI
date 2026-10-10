@@ -172,3 +172,55 @@ def test_database_is_private(handoff_home: Path) -> None:
     Store().close()
     assert stat.S_IMODE(os.stat(handoff_home).st_mode) == 0o700
     assert stat.S_IMODE(os.stat(paths.db_path()).st_mode) == 0o600
+
+
+def test_migrates_a_version_1_database(handoff_home: Path, project: Project) -> None:
+    from ai_handoff.store import MIGRATIONS
+
+    handoff_home.mkdir(parents=True)
+    conn = sqlite3.connect(paths.db_path())
+    conn.executescript(MIGRATIONS[1] + "PRAGMA user_version = 1;")
+    conn.execute(
+        "INSERT INTO projects (key, name, root, created_at) VALUES (?, ?, ?, '2026-01-01T00:00:00+00:00')",
+        (project.key, project.name, str(project.root)),
+    )
+    conn.execute(
+        "INSERT INTO handoffs (project_key, agent, stack, summary, next_actions, created_at) "
+        "VALUES (?, 'old', '', 'from v1', '', '2026-01-01T00:00:00+00:00')",
+        (project.key,),
+    )
+    conn.commit()
+    conn.close()
+    with Store() as store:
+        old = store.latest(project.key)
+        assert (old.summary, old.git_branch, old.git_commit) == ("from v1", None, None)
+        save(store, project)
+    conn = sqlite3.connect(paths.db_path())
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    conn.close()
+
+
+def test_records_git_branch_and_commit(make_repo) -> None:
+    from conftest import git
+
+    from ai_handoff.project import resolve_project
+
+    root = make_repo("app")
+    git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+    git(root, "checkout", "-q", "-b", "feature/graphs")
+    project = resolve_project(root)
+    with Store() as store:
+        handoff = save(store, project)
+    assert handoff.git_branch == "feature/graphs"
+    assert handoff.git_commit and len(handoff.git_commit) == 40
+    assert handoff.git_label().startswith("feature/graphs @ ")
+
+
+def test_all_handoffs_and_since(project: Project) -> None:
+    with Store() as store:
+        save(store, project, summary="a")
+        save(store, project, summary="b")
+        assert [h.summary for h in store.all_handoffs(project.key)] == ["a", "b"]
+        assert len(store.handoffs_since("2000-01-01T00:00:00+00:00")) == 2
+        assert store.handoffs_since("2999-01-01T00:00:00+00:00") == []
+        assert store.list_projects()[0].last_agent == "claude"

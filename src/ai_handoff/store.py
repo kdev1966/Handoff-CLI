@@ -10,10 +10,11 @@ from pathlib import Path
 
 from ai_handoff import paths
 from ai_handoff.errors import HandoffError, NotFoundError, PausedError, ValidationError
-from ai_handoff.project import Project
+from ai_handoff.i18n import t
+from ai_handoff.project import Project, git_context
 from ai_handoff.redact import redact
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_FIELD_BYTES = 16 * 1024
 MAX_HISTORY = 100
 BUSY_TIMEOUT_SECONDS = 10
@@ -22,26 +23,33 @@ _AGENT = re.compile(r"[\w .:/@+-]{1,64}")
 # Control characters other than tab and newline.
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS projects (
-    key        TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    root       TEXT NOT NULL,
-    paused     INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS handoffs (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_key  TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
-    agent        TEXT NOT NULL,
-    stack        TEXT NOT NULL,
-    summary      TEXT NOT NULL,
-    next_actions TEXT NOT NULL,
-    redactions   INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_handoffs_project ON handoffs(project_key, id);
-"""
+# MIGRATIONS[n] upgrades a database from schema n - 1 to schema n.
+MIGRATIONS = {
+    1: """
+    CREATE TABLE IF NOT EXISTS projects (
+        key        TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        root       TEXT NOT NULL,
+        paused     INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS handoffs (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_key  TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+        agent        TEXT NOT NULL,
+        stack        TEXT NOT NULL,
+        summary      TEXT NOT NULL,
+        next_actions TEXT NOT NULL,
+        redactions   INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_handoffs_project ON handoffs(project_key, id);
+    """,
+    2: """
+    ALTER TABLE handoffs ADD COLUMN git_branch TEXT;
+    ALTER TABLE handoffs ADD COLUMN git_commit TEXT;
+    """,
+}
 
 
 @dataclass(frozen=True)
@@ -54,11 +62,26 @@ class Handoff:
     next_actions: str
     redactions: int
     created_at: str
+    git_branch: str | None = None
+    git_commit: str | None = None
+
+    @property
+    def is_restore(self) -> bool:
+        return self.agent.startswith("restore:")
+
+    def git_label(self) -> str | None:
+        """'branch @ 1a2b3c4', or whichever part is known."""
+        commit = self.git_commit[:7] if self.git_commit else None
+        if self.git_branch and commit:
+            return f"{self.git_branch} @ {commit}"
+        return self.git_branch or commit
 
     def to_text(self) -> str:
+        """Plain English text for AI assistants (never translated)."""
+        where = f" on {self.git_label()}" if self.git_label() else ""
         return "\n".join(
             [
-                f"Handoff #{self.id}, saved {self.created_at} by {self.agent}.",
+                f"Handoff #{self.id}, saved {self.created_at} by {self.agent}{where}.",
                 "",
                 "## Stack",
                 self.stack or "(not specified)",
@@ -80,6 +103,7 @@ class ProjectRecord:
     paused: bool
     handoffs: int
     last_handoff_at: str | None
+    last_agent: str | None = None
 
 
 def _now() -> str:
@@ -88,26 +112,24 @@ def _now() -> str:
 
 def clean_field(name: str, value: object, *, required: bool) -> str:
     if not isinstance(value, str):
-        raise ValidationError(f"'{name}' must be a string.")
+        raise ValidationError(t("error.field_not_string", name=name))
     text = value.replace("\r\n", "\n").replace("\r", "\n")
     text = _CONTROL_CHARS.sub("", text).strip()
     if required and not text:
-        raise ValidationError(f"'{name}' must not be empty.")
+        raise ValidationError(t("error.field_empty", name=name))
     try:
         size = len(text.encode("utf-8"))
     except UnicodeEncodeError as exc:
-        raise ValidationError(f"'{name}' is not valid Unicode text.") from exc
+        raise ValidationError(t("error.field_unicode", name=name)) from exc
     if size > MAX_FIELD_BYTES:
-        raise ValidationError(
-            f"'{name}' is {size} bytes; the limit is {MAX_FIELD_BYTES}. Summarize it instead of pasting it."
-        )
+        raise ValidationError(t("error.field_too_large", name=name, size=size, limit=MAX_FIELD_BYTES))
     return text
 
 
 def clean_agent(agent: str | None) -> str:
     agent = (agent or "").strip() or "unknown"
     if not _AGENT.fullmatch(agent):
-        raise ValidationError("'agent' must be 1 to 64 characters: letters, digits, spaces and . : / @ + - _")
+        raise ValidationError(t("error.agent_invalid"))
     return agent
 
 
@@ -137,40 +159,22 @@ class Store:
     def _migrate(self) -> None:
         version = self._conn.execute("PRAGMA user_version").fetchone()[0]
         if version > SCHEMA_VERSION:
-            raise HandoffError(
-                f"{self.path} was created by a newer version of Handoff (schema {version}). Upgrade Handoff."
+            raise HandoffError(t("error.schema_newer", path=self.path, version=version))
+        for target in range(version + 1, SCHEMA_VERSION + 1):
+            # One transaction per step: a failed migration leaves the previous schema intact.
+            self._conn.executescript(
+                f"BEGIN;\n{MIGRATIONS[target]}\nPRAGMA user_version = {target};\nCOMMIT;"
             )
-        if version < SCHEMA_VERSION:
-            with self._conn:
-                self._conn.executescript(_SCHEMA)
-                self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     # Reading
 
     def list_projects(self) -> list[ProjectRecord]:
-        rows = self._conn.execute(
-            """
-            SELECT p.key, p.name, p.root, p.paused,
-                   COUNT(h.id) AS handoffs, MAX(h.created_at) AS last_handoff_at
-            FROM projects p LEFT JOIN handoffs h ON h.project_key = p.key
-            GROUP BY p.key
-            ORDER BY last_handoff_at IS NULL, last_handoff_at DESC, p.name
-            """
-        ).fetchall()
-        return [_project_record(row) for row in rows]
+        rows = self._conn.execute(f"{_PROJECT_QUERY} GROUP BY p.key {_PROJECT_ORDER}").fetchall()
+        return [_record(row) for row in rows]
 
     def get_project(self, key: str) -> ProjectRecord | None:
-        row = self._conn.execute(
-            """
-            SELECT p.key, p.name, p.root, p.paused,
-                   COUNT(h.id) AS handoffs, MAX(h.created_at) AS last_handoff_at
-            FROM projects p LEFT JOIN handoffs h ON h.project_key = p.key
-            WHERE p.key = ?
-            GROUP BY p.key
-            """,
-            (key,),
-        ).fetchone()
-        return _project_record(row) if row else None
+        row = self._conn.execute(f"{_PROJECT_QUERY} WHERE p.key = ? GROUP BY p.key", (key,)).fetchone()
+        return _record(row) if row else None
 
     def is_paused(self, key: str) -> bool:
         row = self._conn.execute("SELECT paused FROM projects WHERE key = ?", (key,)).fetchone()
@@ -181,17 +185,38 @@ class Store:
         return history[0] if history else None
 
     def history(self, key: str, limit: int = 10) -> list[Handoff]:
+        """The most recent handoffs of a project, newest first."""
         limit = max(1, min(int(limit), MAX_HISTORY))
         rows = self._conn.execute(
             "SELECT * FROM handoffs WHERE project_key = ? ORDER BY id DESC LIMIT ?", (key, limit)
         ).fetchall()
         return [Handoff(**dict(row)) for row in rows]
 
+    def all_handoffs(self, key: str) -> list[Handoff]:
+        """Every handoff of a project, oldest first (for statistics)."""
+        rows = self._conn.execute(
+            "SELECT * FROM handoffs WHERE project_key = ? ORDER BY id", (key,)
+        ).fetchall()
+        return [Handoff(**dict(row)) for row in rows]
+
+    def handoffs_since(self, since: str) -> list[Handoff]:
+        """Handoffs of every project created at or after an ISO 8601 UTC timestamp, oldest first."""
+        rows = self._conn.execute(
+            "SELECT * FROM handoffs WHERE created_at >= ? ORDER BY id", (since,)
+        ).fetchall()
+        return [Handoff(**dict(row)) for row in rows]
+
     def get_handoff(self, handoff_id: int) -> Handoff:
         row = self._conn.execute("SELECT * FROM handoffs WHERE id = ?", (handoff_id,)).fetchone()
         if not row:
-            raise NotFoundError(f"No handoff with id {handoff_id}.")
+            raise NotFoundError(t("error.handoff_not_found", id=handoff_id))
         return Handoff(**dict(row))
+
+    def get_project_handoff(self, handoff_id: int, project: Project) -> Handoff:
+        handoff = self.get_handoff(handoff_id)
+        if handoff.project_key != project.key:
+            raise NotFoundError(t("error.handoff_other_project", id=handoff_id, project=project.name))
+        return handoff
 
     # Writing
 
@@ -206,7 +231,7 @@ class Store:
     ) -> Handoff:
         """Append a handoff. Without a stack, the previous one is kept."""
         if self.is_paused(project.key):
-            raise PausedError(f"Handoff is paused for {project.name}; nothing was saved.")
+            raise PausedError(t("error.paused_not_saved", project=project.name))
         fields = {
             "summary": clean_field("summary", summary, required=True),
             "next_actions": clean_field("next_actions", next_actions, required=False),
@@ -224,11 +249,9 @@ class Store:
 
     def restore(self, handoff_id: int, project: Project) -> Handoff:
         """Make an old handoff the latest again by appending a copy of it."""
-        old = self.get_handoff(handoff_id)
-        if old.project_key != project.key:
-            raise NotFoundError(f"Handoff {handoff_id} does not belong to {project.name}.")
+        old = self.get_project_handoff(handoff_id, project)
         if self.is_paused(project.key):
-            raise PausedError(f"Handoff is paused for {project.name}; nothing was restored.")
+            raise PausedError(t("error.paused_not_restored", project=project.name))
         return self._append(
             project,
             f"restore:{handoff_id}",
@@ -247,22 +270,30 @@ class Store:
         """Delete a project and its whole history; return the number of handoffs removed."""
         record = self.get_project(key)
         if not record:
-            raise NotFoundError(f"No project with key {key!r}.")
+            raise NotFoundError(t("error.project_key_not_found", key=key))
         with self._conn:
             self._conn.execute("DELETE FROM projects WHERE key = ?", (key,))
         return record.handoffs
 
     def _append(self, project: Project, agent: str, **fields: object) -> Handoff:
-        created_at = _now()
+        branch, commit = git_context(project.root)
         with self._conn:
             self._upsert_project(project)
             cursor = self._conn.execute(
                 """
-                INSERT INTO handoffs
-                    (project_key, agent, stack, summary, next_actions, redactions, created_at)
-                VALUES (:project_key, :agent, :stack, :summary, :next_actions, :redactions, :created_at)
+                INSERT INTO handoffs (project_key, agent, stack, summary, next_actions, redactions,
+                                      created_at, git_branch, git_commit)
+                VALUES (:project_key, :agent, :stack, :summary, :next_actions, :redactions,
+                        :created_at, :git_branch, :git_commit)
                 """,
-                {"project_key": project.key, "agent": agent, "created_at": created_at, **fields},
+                {
+                    "project_key": project.key,
+                    "agent": agent,
+                    "created_at": _now(),
+                    "git_branch": branch,
+                    "git_commit": commit,
+                    **fields,
+                },
             )
         return self.get_handoff(cursor.lastrowid)
 
@@ -276,15 +307,17 @@ class Store:
         )
 
 
-def _project_record(row: sqlite3.Row) -> ProjectRecord:
-    return ProjectRecord(
-        key=row["key"],
-        name=row["name"],
-        root=row["root"],
-        paused=bool(row["paused"]),
-        handoffs=row["handoffs"],
-        last_handoff_at=row["last_handoff_at"],
-    )
+_PROJECT_QUERY = """
+SELECT p.key, p.name, p.root, p.paused,
+       COUNT(h.id) AS handoffs, MAX(h.created_at) AS last_handoff_at,
+       (SELECT agent FROM handoffs l WHERE l.project_key = p.key ORDER BY l.id DESC LIMIT 1) AS last_agent
+FROM projects p LEFT JOIN handoffs h ON h.project_key = p.key
+"""
+_PROJECT_ORDER = "ORDER BY last_handoff_at IS NULL, last_handoff_at DESC, p.name"
+
+
+def _record(row: sqlite3.Row) -> ProjectRecord:
+    return ProjectRecord(**{**dict(row), "paused": bool(row["paused"])})
 
 
 def _restrict(path: Path, mode: int) -> None:
