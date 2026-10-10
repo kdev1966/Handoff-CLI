@@ -41,6 +41,8 @@ def test_scripts_mention_every_command(shell: str) -> None:
 
 @pytest.mark.parametrize("shell", ["zsh", "bash"])
 def test_scripts_are_valid_shell(shell: str, tmp_path: Path) -> None:
+    if sys.platform == "win32":
+        pytest.skip("'bash' on Windows is usually WSL's, which cannot read Windows paths")
     if not shutil.which(shell):
         pytest.skip(f"{shell} is not installed")
     path = tmp_path / f"handoff.{shell}"
