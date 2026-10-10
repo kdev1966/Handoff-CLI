@@ -83,6 +83,8 @@ def cmd_save(args: argparse.Namespace) -> int:
     _say(t("save.done", id=handoff.id, project=project.name), "success")
     if handoff.redactions:
         _say(tn("show.redactions", handoff.redactions), "warning")
+    for warning in handoff.warnings():
+        _say(t(warning), "warning")
     return 0
 
 

@@ -162,7 +162,9 @@ Handoff s'utilise comme `git` : on tape `handoff <commande>` dans le terminal. C
 | `handoff where` | Indique où sont stockées les données |
 | `handoff completion [--install\|--uninstall]` | Autocomplétion avec Tab (zsh, bash, PowerShell) |
 
-Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé avec `--path`. `show`, `log`, `history`, `stats` et `list` acceptent `--json` pour les scripts.
+Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé avec `--path`.
+
+`handoff save` (comme l'outil `memory_save`) **avertit**, sans refuser, quand le résumé est très court ou ne dit rien, ou quand les prochaines actions manquent. Une passation enregistrée à la main (`handoff save` sans `--agent`) ne dispense pas l'assistant de documenter son propre travail : il sera quand même invité à enregistrer le sien. Les noms d'agents connus sont unifiés (`claude` → `claude-code`, `gemini` → `gemini-cli`…), pour qu'un même outil n'apparaisse pas sous deux noms. `show`, `log`, `history`, `stats` et `list` acceptent `--json` pour les scripts.
 
 Chaque passation enregistre la branche git et le commit courants : ils apparaissent dans `show`, `log` et `diff`.
 

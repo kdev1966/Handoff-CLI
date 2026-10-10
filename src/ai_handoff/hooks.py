@@ -139,7 +139,19 @@ def context_text(project: Project, handoff: Any) -> str:
     return text
 
 
+# The agent name each client should save under (see store.AGENT_ALIASES).
+CLIENT_AGENTS = {
+    "claude": "claude-code",
+    "codex": "codex",
+    "gemini": "gemini-cli",
+    "copilot": "copilot",
+    "cursor": "cursor",
+    "junie": "junie",
+}
+
+
 def save_reminder(project: Project, client: str) -> str:
+    client = CLIENT_AGENTS.get(client, client)
     return (
         f"Handoff: the code of {project.name} changed since the last saved handoff. Before you stop, "
         f'call the memory_save tool of the Handoff MCP server with project_path="{project.root}", '

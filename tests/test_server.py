@@ -89,3 +89,14 @@ async def test_paused_project_is_not_exposed(project: Project) -> None:
     assert "paused" in text_of(read)
     assert "secret plan" not in text_of(read)
     assert write.is_error
+
+
+async def test_save_warns_about_empty_handoffs(project: Project) -> None:
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "memory_save", {"project_path": str(project.root), "summary": "SUMMARY", "next_actions": ""}
+        )
+    text = text_of(result)
+    assert not result.is_error
+    assert "summary is very short" in text
+    assert "no next actions" in text

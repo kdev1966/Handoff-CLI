@@ -10,7 +10,7 @@ from pydantic import Field
 from ai_handoff import __version__
 from ai_handoff.context_file import write_context
 from ai_handoff.errors import HandoffError
-from ai_handoff.i18n import set_language
+from ai_handoff.i18n import set_language, t
 from ai_handoff.project import Project, resolve_project
 from ai_handoff.store import MAX_HISTORY, Store
 
@@ -99,6 +99,8 @@ def memory_save(
     message = f"Saved handoff #{handoff.id} for {project.name}."
     if handoff.redactions:
         message += f" {handoff.redactions} secret-looking value(s) were masked."
+    for warning in handoff.warnings():
+        message += f" {t(warning)}"
     try:
         write_context(project, handoff)
     except (HandoffError, OSError) as exc:

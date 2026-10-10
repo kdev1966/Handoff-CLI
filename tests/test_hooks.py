@@ -163,3 +163,17 @@ def test_hooks_answer_in_english_whatever_the_locale(repo: Path, monkeypatch: py
     monkeypatch.setenv("HANDOFF_LANG", "fr")
     context = call("claude", "session-start", cwd=str(repo))["hookSpecificOutput"]["additionalContext"]
     assert "No handoff has been saved" in context
+
+
+def test_reminder_uses_the_tools_canonical_name(repo: Path) -> None:
+    call("claude", "session-start", cwd=str(repo), source="startup")
+    (repo / "main.py").write_text("changed\n", encoding="utf-8")
+    assert 'agent="claude-code"' in call("claude", "stop", cwd=str(repo))["reason"]
+
+
+def test_manual_save_does_not_hide_the_assistants_work(repo: Path) -> None:
+    call("claude", "session-start", cwd=str(repo), source="startup")
+    (repo / "main.py").write_text("assistant work\n", encoding="utf-8")
+    with Store() as store:
+        store.save(resolve_project(repo), summary="Saved by hand while testing", next_actions="", agent="cli")
+    assert call("claude", "stop", cwd=str(repo))["decision"] == "block"
