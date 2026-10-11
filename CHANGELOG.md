@@ -4,12 +4,23 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.2] - 2026-10-11
 
 ### Added
 
 - A "How Handoff compares" section in the README (English and French).
 - Issue templates for bug reports and feature requests.
+- `handoff setup` and `handoff doctor --fix` warn when they run from a development copy (editable install),
+  whose path the AI tools would then start, and ask before going on.
+
+### Fixed
+
+- When a tool's own command fails (for example `copilot mcp add` on Copilot CLI versions before 1.0),
+  Handoff now writes the tool's configuration file instead of reporting an error.
+- Known agent names ignore case: "Copilot" and "copilot" are the same lane.
+- A tool where Handoff is already configured always counts as chosen. Installs older than 0.2.0 and a
+  first targeted `handoff setup --client …` no longer make `doctor --fix` report configured tools as new.
+- The notes of `handoff doctor` follow the interface language.
 
 ## [0.2.1] - 2026-10-11
 
@@ -77,6 +88,7 @@ First release.
 - English and French interface, detected from the system; Tab completion for zsh, bash and PowerShell.
 - One-command installers for macOS, Linux and Windows.
 
+[0.2.2]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/kdev1966/Handoff-CLI/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kdev1966/Handoff-CLI/compare/v0.1.0...v0.1.1

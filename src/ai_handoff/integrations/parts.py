@@ -255,7 +255,7 @@ class OwnFile(Part):
         self.path, self.content, self.kind = path, content, kind
 
     def apply(self, session: Session) -> None:
-        session.write_text(self.path, self.content(), f"{self.path}: created")
+        session.write_text(self.path, self.content(), f"{self.path}: written")
 
     def remove(self, session: Session) -> None:
         session.delete(self.path, f"{self.path}: deleted")
@@ -310,6 +310,10 @@ class CliMcp(Part):
             return
         self._run(executable, self.remove_args)
         result = self._run(executable, args)
+        if result.returncode != 0 and self.fallback is not None:
+            # Older versions of some CLIs lack the 'mcp add' command: write the file instead.
+            self.fallback.apply(session)
+            return
         if result.returncode != 0:
             raise ConfigError(
                 f"'{self.binary} {' '.join(args[:2])}' failed: {(result.stderr or result.stdout).strip()}"
