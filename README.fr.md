@@ -126,6 +126,7 @@ Appliquer ? [O/n]
 | `handoff setup --dry-run` | affiche les changements prévus sans rien écrire |
 | `handoff setup --remove` | retire tout ce que Handoff a ajouté aux outils |
 | `handoff doctor` | état de chaque outil : connecté, lecture et enregistrement automatiques, consigne |
+| `handoff doctor --fix [--yes]` | répare ce qui manque dans les outils choisis, et propose les outils installés depuis ; montre les changements d'abord |
 | `handoff setup --print-config` | configuration JSON à copier pour un outil non pris en charge |
 
 Ce que Handoff configure, selon ce que chaque outil permet :
@@ -149,7 +150,8 @@ Ce que Handoff configure, selon ce que chaque outil permet :
 
 **Ce que Handoff ne fait pas à votre place :**
 - Il **ne pré-autorise jamais** ses outils : chaque assistant vous demande la permission la première fois, et vous décidez.
-- Il **ne reconfigure rien en arrière-plan** : un outil installé plus tard apparaît dans `handoff doctor`, et vous relancez `handoff setup`.
+- Il **ne reconfigure rien en arrière-plan** : un outil installé plus tard apparaît dans `handoff doctor`, et `handoff doctor --fix` propose de l'ajouter.
+- Il **retient vos choix** : les outils configurés, ceux que vous avez écartés, et si vous voulez les hooks. `doctor --fix` répare en conséquence et ne réinstalle jamais des hooks que vous avez refusés.
 - Il **sauvegarde** chaque fichier avant de le modifier (dossier `backups` dans le dossier de données), **conserve** tout le reste de son contenu, et **refuse** de réécrire un fichier qu'il ne sait pas relire à l'identique.
 
 ## Outils MCP
@@ -183,7 +185,9 @@ Handoff s'utilise comme `git` : on tape `handoff <commande>` dans le terminal. C
 | `handoff pause` / `handoff resume` | Suspend ou reprend le suivi d'un projet (travail confidentiel) |
 | `handoff purge [--key KEY] [-y]` | Supprime toute la mémoire d'un projet |
 | `handoff render` | Régénère `.handoff/context.md` |
-| `handoff where` | Indique où sont stockées les données |
+| `handoff where [--json]` | Quelle mémoire ce dossier utilise et pourquoi : clé du projet, remote ou chemin, racine, nombre de passations, fichiers |
+| `handoff export [--all] [-o FICHIER]` | Écrit la mémoire en JSON Lines (sauvegarde, autre poste) |
+| `handoff import FICHIER [--path DOSSIER] [--dry-run]` | Ajoute les passations d'un export, jamais en double |
 | `handoff completion [--install\|--uninstall]` | Autocomplétion avec Tab (zsh, bash, PowerShell) |
 
 Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé avec `--path`.
@@ -208,6 +212,24 @@ Ces images sont générées à partir de données de démonstration par `scripts
 - **Consoles anciennes** : sur une console qui ne gère pas l'UTF-8, les symboles sont remplacés par des équivalents ASCII.
 - **Langue** : l'interface est en français ou en anglais selon votre système (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`, puis la langue de macOS ou de Windows). `HANDOFF_LANG=fr` ou `HANDOFF_LANG=en` impose une langue. Ce que lisent les IA (outils MCP, `.handoff/context.md`) reste en anglais.
 
+### Quelle mémoire, et pourquoi
+
+`handoff where` explique comment le dossier courant est relié à une mémoire : le remote git qui sert de clé (identifiants retirés), ou le chemin du dossier quand il n'y a pas de remote. Il prévient quand la mémoire ne suivra pas un dossier déplacé (pas de remote), et quand vous êtes dans un sous-dossier, dont la mémoire est celle de tout le dépôt.
+
+### Sauvegarde et synchronisation entre postes
+
+```bash
+handoff export -o api.jsonl              # ce projet (fichier lisible par vous seul)
+handoff export --all -o tout.jsonl       # tous les projets
+handoff import api.jsonl --dry-run       # ce qui serait ajouté
+handoff import api.jsonl                 # n'ajoute jamais une passation deux fois
+handoff import api.jsonl --path ~/code/api   # projet sans remote : rattaché au dossier local
+```
+
+Un export contient une ligne JSON par passation, après un en-tête versionné. L'import traite le fichier comme non fiable : chaque champ est revalidé et les secrets sont masqués à nouveau ; dates, agents, branches et commits sont conservés ; l'état « en pause » n'est pas importé.
+
+Pour synchroniser deux postes : exportez sur l'un, transportez le fichier (dépôt git **privé**, Syncthing, clé USB…) et importez sur l'autre ; relancer l'import est sans risque. La mémoire contient le contexte de vos projets : gardez le fichier et sa destination privés.
+
 ### Assistants sans MCP
 
 Après chaque enregistrement, Handoff génère `.handoff/context.md` à la racine du projet. Ce dossier contient son propre `.gitignore` : il n'apparaît jamais dans `git status` et votre `.gitignore` n'est pas modifié. Un assistant sans MCP peut lire ce fichier, puis enregistrer avec `handoff save`. Ne modifiez pas ce fichier à la main : il est régénéré.
@@ -221,6 +243,7 @@ Pour les outils pris en charge, `handoff setup` écrit déjà cette consigne dan
 - **Pas de pré-autorisation** : Handoff ne s'accorde jamais de permissions dans vos outils IA.
 - **Surface réduite** : 3 outils au schéma typé, pas de SQL brut, pas de suppression par l'IA.
 - **Chemins validés** : le chemin doit être absolu et exister. La racine du disque, le dossier personnel et ses parents sont refusés.
+- **Imports non fiables par principe** : un fichier importé passe par la même validation et le même masquage des secrets qu'une nouvelle passation.
 - **Entrées validées** : 16 Kio maximum par champ, caractères de contrôle supprimés, nom d'agent contrôlé.
 - **Secrets masqués avant stockage** : la mémoire étant relue par d'autres fournisseurs d'IA, ces formats sont remplacés par `[REDACTED]` avant l'enregistrement (détail des expressions régulières dans [`redact.py`](https://github.com/kdev1966/Handoff-CLI/blob/main/src/ai_handoff/redact.py)) :
 
@@ -256,8 +279,8 @@ Le script d'installation place Handoff lui-même dans `~/.local/share/handoff/ve
 
 ## Limites
 
-- La mémoire est locale à la machine. Elle n'est pas synchronisée entre postes ni partagée avec une équipe.
-- Deux clones d'un même dépôt partagent la même mémoire (c'est voulu).
+- La mémoire est locale à la machine. Pour la transférer entre postes, utilisez `handoff export` et `handoff import` ; il n'y a pas de synchronisation automatique.
+- Deux clones d'un même dépôt partagent la même mémoire (c'est voulu), tout comme les sous-dossiers d'un monorepo.
 - Les formats de configuration des outils IA évoluent vite. `handoff doctor` signale ce qui n'est pas en place ; les erreurs des hooks sont consignées dans `hooks.log`, dans le dossier de données, sans jamais bloquer l'outil.
 - L'enregistrement automatique repose sur l'état git du projet : hors dépôt git, seule la consigne demande à l'assistant d'enregistrer.
 - Les messages des scripts d'installation sont en anglais ; ceux de `handoff` suivent la langue du système.

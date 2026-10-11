@@ -1,6 +1,7 @@
 import io
 import json
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -173,3 +174,31 @@ def test_console_reports_broken_pipe_instead_of_exiting() -> None:
 
     with pytest.raises(BrokenPipeError):
         ui.console().on_broken_pipe()
+
+
+def test_where_explains_a_folder_without_remote(capsys, project: Project) -> None:
+    code, out, _ = run(capsys, "where", "-p", str(project.root))
+    assert code == 0
+    assert "not a git repository: the key is the folder path" in out
+    assert "If you move or rename this folder" in out
+
+
+def test_where_explains_a_remote_and_a_subfolder(capsys, make_repo) -> None:
+    root = make_repo("app", remote="https://user:token@github.com/acme/app.git")
+    (root / "src").mkdir()
+    code, out, _ = run(capsys, "where", "-p", str(root / "src"))
+    assert code == 0
+    assert "git remote “origin”: https://github.com/acme/app.git" in out
+    assert "token" not in out
+    assert "You are in a subfolder (src)" in out
+    data = json.loads(run(capsys, "where", "-p", str(root / "src"), "--json")[1])
+    assert data["keyed_by"] == "remote"
+    assert data["subfolder"] == "src"
+    assert data["project"]["key"] == "git:github.com/acme/app"
+
+
+def test_where_outside_a_project(capsys, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    code, out, _ = run(capsys, "where", "-p", str(tmp_path))
+    assert code == 0
+    assert "no project here" in out

@@ -4,6 +4,28 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-10-11
+
+### Added
+
+- `handoff export` writes a project's memory (or all of it with `--all`) to JSON Lines, to standard output
+  or to a file readable by you only.
+- `handoff import` adds the handoffs of an export without duplicates, keeping dates, agents, branches and
+  commits. The file is untrusted: every field is validated and secrets are masked again. `--path` attaches
+  the memory of a project without a git remote to a local folder; `--dry-run` previews.
+- `handoff where` explains which memory a folder uses and why (git remote or folder path, root), warns when
+  the memory will not follow a moved folder or when you are in a subfolder, and accepts `--json`.
+- `handoff doctor --fix` repairs what is missing in the tools chosen at setup and offers tools installed
+  since, after showing the changes. `handoff setup` now remembers the tools configured, the tools declined
+  and the hooks choice; `doctor` shows declined hooks as off instead of missing.
+- README sections on backups and syncing machines.
+
+### Changed
+
+- Handoffs are ordered by date rather than by insertion, so an imported older handoff never becomes the
+  latest.
+- The uninstall scripts ask Python for the database path instead of parsing `handoff where`.
+
 ## [0.1.1] - 2026-10-11
 
 ### Added
@@ -42,5 +64,6 @@ First release.
 - English and French interface, detected from the system; Tab completion for zsh, bash and PowerShell.
 - One-command installers for macOS, Linux and Windows.
 
+[0.2.0]: https://github.com/kdev1966/Handoff-CLI/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kdev1966/Handoff-CLI/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kdev1966/Handoff-CLI/releases/tag/v0.1.0

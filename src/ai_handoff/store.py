@@ -266,21 +266,22 @@ class Store:
         """The most recent handoffs of a project, newest first."""
         limit = max(1, min(int(limit), MAX_HISTORY))
         rows = self._conn.execute(
-            "SELECT * FROM handoffs WHERE project_key = ? ORDER BY id DESC LIMIT ?", (key, limit)
+            "SELECT * FROM handoffs WHERE project_key = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            (key, limit),
         ).fetchall()
         return [Handoff(**dict(row)) for row in rows]
 
     def all_handoffs(self, key: str) -> list[Handoff]:
         """Every handoff of a project, oldest first (for statistics)."""
         rows = self._conn.execute(
-            "SELECT * FROM handoffs WHERE project_key = ? ORDER BY id", (key,)
+            "SELECT * FROM handoffs WHERE project_key = ? ORDER BY created_at, id", (key,)
         ).fetchall()
         return [Handoff(**dict(row)) for row in rows]
 
     def handoffs_since(self, since: str) -> list[Handoff]:
         """Handoffs of every project created at or after an ISO 8601 UTC timestamp, oldest first."""
         rows = self._conn.execute(
-            "SELECT * FROM handoffs WHERE created_at >= ? ORDER BY id", (since,)
+            "SELECT * FROM handoffs WHERE created_at >= ? ORDER BY created_at, id", (since,)
         ).fetchall()
         return [Handoff(**dict(row)) for row in rows]
 
@@ -377,6 +378,35 @@ class Store:
             self._conn.execute("DELETE FROM project_state WHERE project_key = ?", (key,))
         return record.handoffs
 
+    def has_handoff(self, key: str, created_at: str, agent: str, summary: str) -> bool:
+        """Whether this exact handoff is already stored (used to import without duplicates)."""
+        row = self._conn.execute(
+            "SELECT 1 FROM handoffs WHERE project_key = ? AND created_at = ? AND agent = ? AND summary = ?",
+            (key, created_at, agent, summary),
+        ).fetchone()
+        return row is not None
+
+    def import_handoff(self, project: Project, **fields: object) -> None:
+        """Store a handoff from an export as it was: same date, agent and git context.
+
+        The project's local name and folder win over the exported ones, and the working
+        tree baseline is left alone: an imported note says nothing about the code here.
+        """
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO projects (key, name, root, created_at) VALUES (?, ?, ?, ?)",
+                (project.key, project.name, str(project.root), _now()),
+            )
+            self._conn.execute(
+                """
+                INSERT INTO handoffs (project_key, agent, stack, summary, next_actions, redactions,
+                                      created_at, git_branch, git_commit)
+                VALUES (:project_key, :agent, :stack, :summary, :next_actions, :redactions,
+                        :created_at, :git_branch, :git_commit)
+                """,
+                {"project_key": project.key, **fields},
+            )
+
     def _append(self, project: Project, agent: str, **fields: object) -> Handoff:
         branch, commit = git_context(project.root)
         fingerprint = git_fingerprint(project.root)
@@ -417,7 +447,8 @@ class Store:
 _PROJECT_QUERY = """
 SELECT p.key, p.name, p.root, p.paused,
        COUNT(h.id) AS handoffs, MAX(h.created_at) AS last_handoff_at,
-       (SELECT agent FROM handoffs l WHERE l.project_key = p.key ORDER BY l.id DESC LIMIT 1) AS last_agent
+       (SELECT agent FROM handoffs l WHERE l.project_key = p.key
+        ORDER BY l.created_at DESC, l.id DESC LIMIT 1) AS last_agent
 FROM projects p LEFT JOIN handoffs h ON h.project_key = p.key
 """
 _PROJECT_ORDER = "ORDER BY last_handoff_at IS NULL, last_handoff_at DESC, p.name"

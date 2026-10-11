@@ -19,6 +19,8 @@ from ai_handoff.i18n import t, tn
 from ai_handoff.project import Project, resolve_project
 from ai_handoff.store import MAX_HISTORY, Handoff, Store
 
+MAX_REPORTED_ERRORS = 20
+
 
 def _project(path: str | None) -> Project:
     return resolve_project(Path(path).absolute() if path else Path.cwd())
@@ -158,6 +160,72 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    from ai_handoff import transfer
+
+    with Store() as store:
+        if args.all:
+            keys = [record.key for record in store.list_projects()]
+        else:
+            project = _project(args.path)
+            if not store.get_project(project.key):
+                raise HandoffError(t("error.nothing_to_export", project=project.name))
+            keys = [project.key]
+        lines = list(transfer.export_lines(store, keys))
+    text = "\n".join(lines) + "\n"
+    if not args.output:
+        sys.stdout.write(text)
+        return 0
+    target = Path(args.output).expanduser()
+    # The export holds your projects' context: readable by you only.
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    _say(tn("export.done", len(lines) - 1, path=ui.short_path(str(target.absolute()))), "success")
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    from ai_handoff import transfer
+
+    try:
+        text = (
+            sys.stdin.read() if args.file == "-" else Path(args.file).expanduser().read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeDecodeError) as exc:
+        raise HandoffError(t("import.no_file", path=args.file)) from exc
+    lines = text.splitlines()
+    override = None
+    if args.path:
+        keys = transfer.projects_in(lines)
+        if len(keys) > 1:
+            raise HandoffError(t("import.path_needs_one", count=len(keys)))
+        override = resolve_project(Path(args.path).absolute())
+    with Store() as store:
+        report = transfer.import_lines(lines, store, override=override, dry_run=args.dry_run)
+        if not args.dry_run:
+            for key in report.projects:
+                record = store.get_project(key)
+                if record and not record.paused and Path(record.root).is_dir():
+                    with contextlib.suppress(HandoffError, OSError):
+                        project = Project(key=record.key, root=Path(record.root), name=record.name)
+                        write_context(project, store.latest(key))
+    summary = t(
+        "import.preview" if args.dry_run else "import.done",
+        imported=report.imported,
+        duplicates=report.duplicates,
+        projects=len(report.projects),
+    )
+    _say(summary, "muted" if args.dry_run else "success")
+    for error in report.errors[:MAX_REPORTED_ERRORS]:
+        _say(error, "warning")
+    if len(report.errors) > MAX_REPORTED_ERRORS:
+        _say(t("import.more_errors", count=len(report.errors) - MAX_REPORTED_ERRORS), "warning")
+    if report.path_keyed:
+        _say(t("import.path_keyed", projects=", ".join(sorted(report.path_keyed))), "warning")
+    return 1 if report.errors and not report.imported and not report.duplicates else 0
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     project = _project(args.path)
     with Store() as store:
@@ -255,7 +323,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
 def cmd_doctor(args: argparse.Namespace) -> int:
     from ai_handoff import setup_flow
 
-    ui.console().print(setup_flow.doctor())
+    if args.fix:
+        return setup_flow.run_fix(yes=args.yes, dry_run=args.dry_run, interactive=sys.stdin.isatty())
+    table, needs_fix = setup_flow.doctor()
+    ui.console().print(table)
+    if needs_fix:
+        _say(t("doctor.fix_hint"), "warning")
     return 0
 
 
@@ -318,11 +391,38 @@ def cmd_hook(args: argparse.Namespace) -> int:
 
 
 def cmd_where(args: argparse.Namespace) -> int:
-    _say(f"{t('where.database')} {paths.db_path()}")
+    from ai_handoff.project import explain_project
+
+    explanation, problem = None, None
     try:
-        _say(f"{t('where.context')} {context_path(_project(args.path))}")
+        explanation = explain_project(Path(args.path).absolute() if args.path else Path.cwd())
     except HandoffError as exc:
-        _say(f"{t('where.context')} ({t('where.no_project', reason=exc)})", "muted")
+        problem = str(exc)
+    count, paused = 0, False
+    if explanation is not None:
+        with Store() as store:
+            record = store.get_project(explanation.project.key)
+            count = record.handoffs if record else 0
+            paused = store.is_paused(explanation.project.key)
+    if args.json:
+        project = explanation.project if explanation else None
+        _print_json(
+            {
+                "database": str(paths.db_path()),
+                "project": _project_json(project) if project else None,
+                "keyed_by": None
+                if explanation is None
+                else ("remote" if explanation.keyed_by_remote else "path"),
+                "remote": explanation.remote_url if explanation else None,
+                "subfolder": str(explanation.subfolder) if explanation and explanation.subfolder else None,
+                "handoffs": count,
+                "paused": paused,
+                "context_file": str(context_path(project)) if project else None,
+                "error": problem,
+            }
+        )
+        return 0
+    ui.console().print(views.where(explanation, problem, count, paused, paths.db_path()))
     return 0
 
 
@@ -423,6 +523,15 @@ def build_parser() -> argparse.ArgumentParser:
     purge.add_argument("--key", help=t("opt.key"))
     purge.add_argument("--yes", "-y", action="store_true", help=t("opt.yes"))
 
+    export = add("export", cmd_export, path=True)
+    export.add_argument("--all", action="store_true", help=t("opt.all"))
+    export.add_argument("--output", "-o", metavar="FILE", help=t("opt.output"))
+
+    importer = add("import", cmd_import, path=False)
+    importer.add_argument("file", help=t("opt.import_file"))
+    importer.add_argument("--path", "-p", help=t("opt.import_path"))
+    importer.add_argument("--dry-run", action="store_true", help=t("opt.dry_run"))
+
     add("render", cmd_render)
 
     setup = add("setup", cmd_setup, path=False)
@@ -433,7 +542,10 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--print-config", action="store_true", help=t("opt.print_config"))
     setup.add_argument("--remove", action="store_true", help=t("opt.remove"))
 
-    add("doctor", cmd_doctor, path=False)
+    doctor = add("doctor", cmd_doctor, path=False)
+    doctor.add_argument("--fix", action="store_true", help=t("opt.fix"))
+    doctor.add_argument("--yes", "-y", action="store_true", help=t("opt.setup_yes"))
+    doctor.add_argument("--dry-run", action="store_true", help=t("opt.dry_run"))
     completion = add("completion", cmd_completion, path=False)
     completion.add_argument("shell", nargs="?", choices=completion_shells(), help=t("opt.shell"))
     completion.add_argument("--install", action="store_true", help=t("opt.completion_install"))
@@ -443,7 +555,7 @@ def build_parser() -> argparse.ArgumentParser:
     hook.add_argument("client")
     hook.add_argument("event", choices=("session-start", "stop"))
 
-    add("where", cmd_where)
+    add("where", cmd_where, json=True)
     add("serve", cmd_serve, path=False, hidden=True)
     return parser
 
