@@ -202,3 +202,14 @@ def test_where_outside_a_project(capsys, tmp_path, monkeypatch) -> None:
     code, out, _ = run(capsys, "where", "-p", str(tmp_path))
     assert code == 0
     assert "no project here" in out
+
+
+@pytest.mark.parametrize(("language", "prefix"), [("en", "usage: "), ("fr", "utilisation : ")])
+def test_subcommand_help_has_one_usage_prefix(capsys, monkeypatch, language: str, prefix: str) -> None:
+    monkeypatch.setenv("HANDOFF_LANG", language)
+    i18n.set_language(None)
+    with pytest.raises(SystemExit):
+        main(["log", "--help"])
+    first_line = capsys.readouterr().out.splitlines()[0]
+    assert first_line.startswith(f"{prefix}handoff log ")
+    assert first_line.count(prefix.strip()) == 1

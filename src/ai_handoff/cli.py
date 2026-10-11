@@ -436,7 +436,8 @@ def _confirm(question: str) -> bool:
 
 class _Formatter(argparse.HelpFormatter):
     def add_usage(self, usage, actions, groups, prefix=None):  # type: ignore[no-untyped-def]
-        return super().add_usage(usage, actions, groups, prefix or t("help.usage"))
+        # argparse passes an empty prefix to build the subcommands' names: keep it empty.
+        return super().add_usage(usage, actions, groups, t("help.usage") if prefix is None else prefix)
 
 
 def _localize(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
