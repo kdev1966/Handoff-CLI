@@ -5,6 +5,8 @@ confirmation unless --yes is given. Without a terminal and without --yes,
 nothing is changed.
 """
 
+import json
+
 from rich import box
 from rich.table import Table
 from rich.text import Text
@@ -69,10 +71,49 @@ def _print_outcomes(outcomes: list[Outcome], *, preview: bool) -> None:
                 _say(f"      {ui.short_path(change)}", "muted")
 
 
+CHOICES_FILE = "setup.json"
+
+
+def load_choices() -> dict[str, object] | None:
+    """What the developer chose at the last setup: the tools and whether hooks are wanted."""
+    try:
+        data = json.loads((paths.data_dir() / CHOICES_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("clients"), list):
+        return None
+
+    def names(key: str) -> list[str]:
+        value = data.get(key)
+        return [name for name in value if isinstance(name, str)] if isinstance(value, list) else []
+
+    return {
+        "clients": names("clients"),
+        "declined": names("declined"),
+        "hooks": data.get("hooks") is not False,
+    }
+
+
+def save_choices(names: list[str], hooks: bool, *, merge: bool, declined: list[str] | None = None) -> None:
+    """Remember the tools configured, the tools the developer turned down, and the hooks choice."""
+    previous = load_choices() if merge else None
+    clients = set(names) | set(previous["clients"] if previous else [])
+    refused = (set(previous["declined"]) if previous else set()) | set(declined or [])
+    data = {"clients": sorted(clients), "declined": sorted(refused - clients), "hooks": hooks}
+    path = paths.data_dir() / CHOICES_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def clear_choices() -> None:
+    (paths.data_dir() / CHOICES_FILE).unlink(missing_ok=True)
+
+
 def run_setup(
     *, yes: bool, names: list[str] | None, hooks: bool | None, dry_run: bool, interactive: bool
 ) -> int:
     chosen = _select(names)
+    detected_tools = list(chosen)
     if not chosen:
         _say(t("setup.none_detected"), "muted")
         return 0
@@ -107,8 +148,15 @@ def run_setup(
     if not any(outcome.changes for outcome in preview):
         _print_outcomes(preview, preview=True)
         _say(t("setup.nothing_to_do"), "success")
-        if want_completion and not dry_run:
-            _install_completion(shell)
+        if not dry_run:
+            save_choices(
+                [item.name for item in chosen if not item.manual],
+                hooks,
+                merge=bool(names),
+                declined=[item.name for item in detected_tools if item not in chosen and not item.manual],
+            )
+            if want_completion:
+                _install_completion(shell)
         return 0
     if not automatic:
         _say(t("setup.planned"), "bold")
@@ -120,6 +168,12 @@ def run_setup(
         return 1
 
     outcomes = integrations.apply(chosen, hooks=hooks, dry_run=False)
+    save_choices(
+        [integration.name for integration in chosen if not integration.manual],
+        hooks,
+        merge=bool(names),
+        declined=[item.name for item in detected_tools if item not in chosen and not item.manual],
+    )
     _say(t("setup.done"), "bold")
     _print_outcomes(outcomes, preview=False)
     if want_completion:
@@ -156,22 +210,77 @@ def run_remove(*, yes: bool, dry_run: bool, interactive: bool) -> int:
         _say(t("purge.cancelled"), "muted")
         return 1
     outcomes = integrations.remove(targets, dry_run=False)
+    clear_choices()
     _say(tn("setup.removed_count", sum(1 for outcome in outcomes if outcome.changes)), "success")
     return 1 if any(outcome.error for outcome in outcomes) else 0
 
 
-def _cell(value: bool | None) -> Text:
+def run_fix(*, yes: bool, dry_run: bool, interactive: bool) -> int:
+    """Repair what is missing in the tools chosen at setup, keeping the developer's choices."""
+    choices = load_choices()
+    if choices is None:
+        _say(t("doctor.no_choices"), "warning")
+        return 0
+    known = {integration.name: integration for integration in INTEGRATIONS}
+    found = {integration.name for integration in integrations.detected()}
+    chosen = [known[name] for name in choices["clients"] if name in known and name in found]
+    new = [
+        integration
+        for integration in integrations.detected()
+        if integration.name not in choices["clients"]
+        and integration.name not in choices["declined"]
+        and not integration.manual
+    ]
+    declined: list[str] = []
+    if new:
+        if interactive and not yes and not dry_run:
+            for item in new:
+                if ask_yes(t("doctor.ask_new", client=item.label)):
+                    chosen.append(item)
+                else:
+                    declined.append(item.name)
+        else:
+            _say(t("doctor.new_tools", clients=", ".join(item.label for item in new)), "warning")
+    hooks = bool(choices["hooks"])
+    preview = integrations.apply(chosen, hooks=hooks, dry_run=True)
+    if not any(outcome.changes for outcome in preview):
+        if declined:
+            save_choices([], hooks, merge=True, declined=declined)
+        _say(t("doctor.all_good"), "success")
+        return 0
+    _say(t("setup.planned"), "bold")
+    _print_outcomes([outcome for outcome in preview if outcome.changes or outcome.error], preview=True)
+    if dry_run:
+        return 0
+    if not yes and (not interactive or not ask_yes(t("setup.confirm"))):
+        _say(t("purge.cancelled"), "muted")
+        return 1
+    outcomes = integrations.apply(chosen, hooks=hooks, dry_run=False)
+    save_choices([integration.name for integration in chosen], hooks, merge=True, declined=declined)
+    _say(t("setup.done"), "bold")
+    _print_outcomes([outcome for outcome in outcomes if outcome.changes or outcome.error], preview=False)
+    return 1 if any(outcome.error for outcome in outcomes) else 0
+
+
+def _cell(value: bool | None, *, off: bool = False) -> Text:
+    if off:
+        return Text(t("doctor.off"), style="muted")
     if value is None:
         return Text("—", style="muted")
     return Text("✔", style="success") if value else Text("✗", style="error")
 
 
-def doctor() -> Table:
+def doctor() -> tuple[Table, bool]:
+    """The state of each tool, and whether 'handoff doctor --fix' has something to do."""
+    choices = load_choices()
+    chosen = set(choices["clients"]) if choices else set()
+    hooks_off = choices is not None and not choices["hooks"]
     table = Table(box=box.SIMPLE_HEAD, header_style="bold", pad_edge=False)
     for label in ("doctor.client", "doctor.mcp", "doctor.context", "doctor.save", "doctor.instructions"):
         table.add_column(t(label), justify="left" if label == "doctor.client" else "center")
     table.add_column(t("doctor.notes"))
     found = {integration.name for integration in integrations.detected()}
+    needs_fix = False
     for integration in INTEGRATIONS:
         state = (
             integrations.status(integration) if not integration.manual else dict.fromkeys(integrations.KINDS)
@@ -181,12 +290,22 @@ def doctor() -> Table:
         notes = []
         if integration.manual:
             notes.append(t("setup.manual", reason=integration.manual))
-        elif state["mcp"] is False:
-            notes.append(t("doctor.run_setup"))
+        elif integration.name not in chosen:
+            notes.append(t("doctor.run_setup") if state["mcp"] is False else "")
+            if choices and integration.name not in choices["declined"]:
+                needs_fix = True  # a tool installed since the last setup
+        elif any(
+            value is False and not (hooks_off and kind in ("context", "save"))
+            for kind, value in state.items()
+        ):
+            needs_fix = True
         notes += integration.notes
         table.add_row(
             Text(integration.label, style="bold"),
-            *(_cell(state[kind]) for kind in integrations.KINDS),
-            Text("\n".join(notes), style="muted"),
+            *(
+                _cell(state[kind], off=hooks_off and kind in ("context", "save") and state[kind] is not None)
+                for kind in integrations.KINDS
+            ),
+            Text("\n".join(note for note in notes if note), style="muted"),
         )
-    return table
+    return table, needs_fix

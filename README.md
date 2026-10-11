@@ -126,6 +126,7 @@ Apply? [Y/n]
 | `handoff setup --dry-run` | shows the planned changes without writing anything |
 | `handoff setup --remove` | removes everything Handoff added to the tools |
 | `handoff doctor` | state of each tool: connected, automatic read and save, instructions |
+| `handoff doctor --fix [--yes]` | repairs what is missing in the tools you chose, and offers tools installed since; shows the changes first |
 | `handoff setup --print-config` | JSON configuration to paste into an unsupported tool |
 
 What Handoff configures, depending on what each tool allows:
@@ -149,7 +150,8 @@ What Handoff configures, depending on what each tool allows:
 
 **What Handoff does not do on your behalf:**
 - It **never pre-approves** its tools: each assistant asks your permission the first time, and you decide.
-- It **reconfigures nothing in the background**: a tool installed later shows up in `handoff doctor`, and you run `handoff setup` again.
+- It **reconfigures nothing in the background**: a tool installed later shows up in `handoff doctor`, and `handoff doctor --fix` offers to add it.
+- It **remembers your choices**: the tools you configured, the ones you turned down, and whether you want hooks. `doctor --fix` repairs according to them and never reinstalls hooks you declined.
 - It **backs up** every file before changing it (`backups` folder in the data folder), **keeps** the rest of its content, and **refuses** to rewrite a file it cannot read back exactly.
 
 ## MCP tools
@@ -183,7 +185,9 @@ Handoff works like `git`: you type `handoff <command>` in your terminal. It is n
 | `handoff pause` / `handoff resume` | Stops or resumes tracking a project (confidential work) |
 | `handoff purge [--key KEY] [-y]` | Deletes a project's whole memory |
 | `handoff render` | Regenerates `.handoff/context.md` |
-| `handoff where` | Shows where the data is stored |
+| `handoff where [--json]` | Which memory this folder uses and why: project key, remote or folder path, root, number of handoffs, files |
+| `handoff export [--all] [-o FILE]` | Writes the memory to JSON Lines (backup, another machine) |
+| `handoff import FILE [--path DIR] [--dry-run]` | Adds the handoffs of an export, never twice |
 | `handoff completion [--install\|--uninstall]` | Tab completion (zsh, bash, PowerShell) |
 
 Every command works on the current folder, or on the folder given with `--path`.
@@ -208,6 +212,24 @@ These images are generated from demo data by `scripts/screenshots.py`.
 - **Older consoles**: on a console without UTF-8, symbols are replaced with ASCII equivalents.
 - **Language**: the interface is in English or French depending on your system (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`, then the macOS or Windows language). `HANDOFF_LANG=en` or `HANDOFF_LANG=fr` forces a language. What AI assistants read (MCP tools, `.handoff/context.md`) is always in English.
 
+### Which memory, and why
+
+`handoff where` explains how the current folder maps to a memory: the git remote used as the key (credentials removed), or the folder path when there is no remote. It warns when the memory will not follow a moved folder (no remote), and when you are in a subfolder, whose memory is the whole repository's.
+
+### Backups and syncing machines
+
+```bash
+handoff export -o api.jsonl              # this project (readable by you only)
+handoff export --all -o everything.jsonl # every project
+handoff import api.jsonl --dry-run       # what would be added
+handoff import api.jsonl                 # never adds a handoff twice
+handoff import api.jsonl --path ~/code/api   # project without a remote: attach it to the local folder
+```
+
+An export is one JSON line per handoff after a versioned header. Importing treats the file as untrusted: every field is validated and secrets are masked again; dates, agents, branches and commits are kept; the paused state is not imported.
+
+To keep two machines in sync, export on one, carry the file over (a **private** git repository, Syncthing, a USB key…) and import on the other; running the import again is harmless. The memory holds your projects' context: keep the file and its destination private.
+
 ### Assistants without MCP
 
 After each save, Handoff generates `.handoff/context.md` at the project root. That folder has its own `.gitignore`: it never appears in `git status`, and your `.gitignore` is not changed. An assistant without MCP can read this file, then save with `handoff save`. Do not edit the file by hand: it is regenerated.
@@ -221,6 +243,7 @@ For supported tools, `handoff setup` already writes this guidance into their glo
 - **No pre-approval**: Handoff never grants itself permissions in your AI tools.
 - **Small surface**: 3 tools with typed schemas, no raw SQL, no deletion by an AI.
 - **Validated paths**: the path must be absolute and exist. The filesystem root, the home folder and its parents are refused.
+- **Imports are untrusted**: an imported file goes through the same validation and secret masking as a new handoff.
 - **Validated input**: at most 16 KiB per field, control characters removed, agent name checked.
 - **Secrets masked before storage**: since the memory is read again by other AI providers, these formats are replaced with `[REDACTED]` before saving (the regular expressions are in [`redact.py`](https://github.com/kdev1966/Handoff-CLI/blob/main/src/ai_handoff/redact.py)):
 
@@ -256,8 +279,8 @@ The install script puts Handoff itself in `~/.local/share/handoff/venv` (macOS a
 
 ## Limits
 
-- The memory is local to the machine. It is not synchronized between computers or shared with a team.
-- Two clones of the same repository share the same memory (on purpose).
+- The memory is local to the machine. To move it between computers, use `handoff export` and `handoff import`; there is no automatic synchronization.
+- Two clones of the same repository share the same memory (on purpose), and so do the subfolders of a monorepo.
 - AI tools change their configuration formats often. `handoff doctor` reports what is not in place; hook errors are logged to `hooks.log` in the data folder and never block the tool.
 - Automatic saving relies on the project's git state: outside a git repository, only the instructions ask the assistant to save.
 - The install scripts print English messages; `handoff` follows the system language.

@@ -116,14 +116,12 @@ function Invoke-HandoffInstaller {
     function Uninstall-Handoff {
         $database = $null
         if (Test-Path $venvHandoff) {
-            # Read all the output before filtering: stopping the pipeline early would close
-            # the command's stdout while it is still writing.
-            $previousLang = $env:HANDOFF_LANG
-            $env:HANDOFF_LANG = 'en'  # the line parsed below is in English
-            $output = @(& $venvHandoff where 2>$null)
-            $env:HANDOFF_LANG = $previousLang
-            $line = $output | Where-Object { $_ -like 'Database:*' } | Select-Object -First 1
-            if ($line) { $database = $line -replace '^Database:\s*', '' }
+            try {
+                $venvPython = Join-Path $venvDir 'Scripts\python.exe'
+                $database = (& $venvPython -c "from ai_handoff import paths; print(paths.db_path())" | Select-Object -Last 1)
+            } catch {
+                $database = $null
+            }
             & $venvHandoff setup --remove --yes
             & $venvHandoff completion --uninstall | Out-Null
             $global:LASTEXITCODE = 0

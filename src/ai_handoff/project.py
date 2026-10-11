@@ -6,7 +6,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from ai_handoff.errors import ProjectError
 from ai_handoff.i18n import t
@@ -174,3 +174,46 @@ def git_fingerprint(root: Path) -> str | None:
             continue
         digest.update(f"{name}:{info.st_size}:{info.st_mtime_ns}".encode("utf-8", "replace"))
     return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class Explanation:
+    """Why a folder maps to a given memory, for 'handoff where'."""
+
+    project: Project
+    folder: Path  # the folder asked about
+    has_git: bool
+    remote_url: str | None  # the 'origin' remote, without credentials
+
+    @property
+    def keyed_by_remote(self) -> bool:
+        return self.project.key.startswith("git:")
+
+    @property
+    def subfolder(self) -> Path | None:
+        """The folder relative to the project root, when it is not the root itself."""
+        if self.folder == self.project.root:
+            return None
+        try:
+            return self.folder.relative_to(self.project.root)
+        except ValueError:
+            return None
+
+
+def strip_credentials(url: str) -> str:
+    """Remove 'user:password@' from a URL before showing it."""
+    if "://" not in url:
+        return url
+    parts = urlsplit(url)
+    if not (parts.username or parts.password) or not parts.hostname:
+        return url
+    netloc = parts.hostname + (f":{parts.port}" if parts.port else "")
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
+def explain_project(path: str | os.PathLike[str]) -> Explanation:
+    project = resolve_project(path)
+    folder = Path(path).expanduser().resolve()
+    has_git = (project.root / ".git").exists()
+    url = run_git(project.root, "config", "--get", "remote.origin.url") if has_git else None
+    return Explanation(project, folder, has_git, strip_credentials(url) if url else None)

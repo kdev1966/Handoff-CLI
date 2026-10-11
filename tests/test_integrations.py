@@ -380,3 +380,59 @@ def test_setup_manual_asks_for_completion(capsys, fake_home: Path, monkeypatch: 
     assert run_cli(capsys, "setup")[0] == 0
     assert any("Tab completion" in prompt for prompt in prompts)
     assert not (fake_home / ".zshrc").exists()
+
+
+def test_setup_remembers_choices_and_declined_tools(capsys, fake_home: Path, monkeypatch) -> None:
+    from ai_handoff import setup_flow
+
+    (fake_home / ".cursor").mkdir()
+    (fake_home / ".kiro").mkdir()
+    answers = iter(["2", "2", "", "n", "n", ""])  # manual, pick: Cursor yes, Kiro no, hooks no, apply
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
+    assert run_cli(capsys, "setup")[0] == 0
+    choices = setup_flow.load_choices()
+    assert choices == {"clients": ["cursor"], "declined": ["kiro"], "hooks": False}
+
+
+def test_doctor_fix_repairs_without_reinstalling_declined_hooks(capsys, fake_home: Path) -> None:
+    (fake_home / ".cursor").mkdir()
+    assert run_cli(capsys, "setup", "--yes", "--client", "cursor", "--no-hooks")[0] == 0
+    (fake_home / ".cursor" / "mcp.json").write_text('{"mcpServers": {}}', encoding="utf-8")
+    _code, out = run_cli(capsys, "doctor")
+    assert "doctor --fix" in out
+    assert "off" in out
+    assert run_cli(capsys, "doctor", "--fix", "--yes")[0] == 0
+    assert "handoff" in load(fake_home / ".cursor" / "mcp.json")["mcpServers"]
+    assert not (fake_home / ".cursor" / "hooks.json").exists()
+    assert "Everything is in place" in run_cli(capsys, "doctor", "--fix", "--yes")[1]
+
+
+def test_doctor_fix_offers_new_tools_only(capsys, fake_home: Path, monkeypatch) -> None:
+    (fake_home / ".cursor").mkdir()
+    assert run_cli(capsys, "setup", "--yes", "--client", "cursor")[0] == 0
+    (fake_home / ".kiro").mkdir()  # installed after the setup
+    _code, out = run_cli(capsys, "doctor", "--fix", "--yes")
+    assert "New AI tools found: Kiro" in out
+    assert not (fake_home / ".kiro" / "settings" / "mcp.json").exists()  # never added without asking
+
+    answers = iter(["y", ""])  # configure Kiro, apply
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
+    assert run_cli(capsys, "doctor", "--fix")[0] == 0
+    assert (fake_home / ".kiro" / "settings" / "mcp.json").exists()
+
+
+def test_doctor_fix_before_any_setup(capsys) -> None:
+    code, out = run_cli(capsys, "doctor", "--fix")
+    assert code == 0
+    assert "not been set up" in out
+
+
+def test_remove_forgets_the_choices(capsys, fake_home: Path) -> None:
+    from ai_handoff import setup_flow
+
+    (fake_home / ".cursor").mkdir()
+    run_cli(capsys, "setup", "--yes", "--client", "cursor")
+    run_cli(capsys, "setup", "--remove", "--yes")
+    assert setup_flow.load_choices() is None

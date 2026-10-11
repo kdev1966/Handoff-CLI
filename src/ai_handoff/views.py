@@ -14,7 +14,7 @@ from rich.text import Text
 from ai_handoff import activity, graph, ui
 from ai_handoff.diffing import word_diff
 from ai_handoff.i18n import t, tn
-from ai_handoff.project import Project
+from ai_handoff.project import Explanation, Project
 from ai_handoff.store import Handoff, ProjectRecord
 
 STALE_DAYS = 14
@@ -353,7 +353,7 @@ def projects(
 WELCOME_GROUPS = (
     ("welcome.browse", ("show", "log", "diff", "stats", "list", "history")),
     ("welcome.record", ("save", "restore")),
-    ("welcome.manage", ("pause", "resume", "purge", "render", "where")),
+    ("welcome.manage", ("pause", "resume", "purge", "export", "import", "render", "where")),
     ("welcome.configure", ("setup", "doctor", "completion")),
 )
 
@@ -395,3 +395,42 @@ def welcome(
         for name in names:
             grid.add_row(Text(f"  handoff {name}", style="bold"), Text(t(f"cmd.{name}"), style="muted"))
     return Group(title, Text(), status, Text(), grid, Text(), Text(t("welcome.footer"), style="muted"))
+
+
+def where(
+    explanation: Explanation | None, problem: str | None, count: int, paused: bool, database: Path
+) -> Group:
+    """Which memory this folder uses, and why."""
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="label", no_wrap=True)
+    grid.add_column()
+    warnings: list[Text] = []
+    if explanation is None:
+        grid.add_row(t("where.project"), Text(t("where.no_project", reason=problem), style="muted"))
+    else:
+        project = explanation.project
+        if explanation.keyed_by_remote:
+            why = t("where.why_remote", url=ui.safe(explanation.remote_url or "?"))
+        elif explanation.has_git:
+            why = t("where.why_git_path")
+        else:
+            why = t("where.why_path")
+        memory = Text(tn("count.handoffs", count) + " · ")
+        memory.append(
+            t("status.paused") if paused else t("where.tracking"), style="warning" if paused else "success"
+        )
+        grid.add_row(t("where.project"), Text(ui.safe(project.name), style="bold"))
+        grid.add_row(t("where.key"), ui.safe(project.key))
+        grid.add_row(t("where.why"), why)
+        root_note = t("where.root_git" if explanation.has_git else "where.root_folder")
+        grid.add_row(t("where.root"), f"{ui.short_path(str(project.root))} ({root_note})")
+        grid.add_row(t("where.memory"), memory)
+        grid.add_row(t("where.context"), ui.short_path(str(project.root / ".handoff" / "context.md")))
+        if not explanation.keyed_by_remote:
+            warnings.append(Text(t("where.warn_path"), style="warning"))
+        if explanation.subfolder is not None:
+            warnings.append(
+                Text(t("where.warn_subfolder", folder=ui.safe(str(explanation.subfolder))), style="warning")
+            )
+    grid.add_row(t("where.database"), ui.short_path(str(database)))
+    return Group(grid, *([Text(), *warnings] if warnings else []))

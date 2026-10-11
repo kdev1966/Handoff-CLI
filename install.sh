@@ -143,7 +143,7 @@ install() {
 uninstall() {
     database=""
     if [ -x "$VENV_DIR/bin/handoff" ]; then
-        database="$(HANDOFF_LANG=en "$VENV_DIR/bin/handoff" where 2>/dev/null | sed -n 's/^Database: *//p')" || true
+        database="$("$VENV_DIR/bin/python" -c 'from ai_handoff import paths; print(paths.db_path())' 2>/dev/null)" || true
         "$VENV_DIR/bin/handoff" setup --remove --yes || true
         "$VENV_DIR/bin/handoff" completion --uninstall >/dev/null 2>&1 || true
     fi
