@@ -5,7 +5,9 @@ confirmation unless --yes is given. Without a terminal and without --yes,
 nothing is changed.
 """
 
+import importlib.metadata
 import json
+import sys
 
 from rich import box
 from rich.table import Table
@@ -56,7 +58,7 @@ def _print_outcomes(outcomes: list[Outcome], *, preview: bool) -> None:
     for outcome in outcomes:
         integration = outcome.integration
         if integration.manual:
-            _say(f"  {integration.label}: {t('setup.manual', reason=integration.manual)}", "warning")
+            _say(f"  {integration.label}: {t('setup.manual', reason=t(integration.manual))}", "warning")
             continue
         if outcome.error:
             _say(f"  ✗ {integration.label}: {outcome.error}", "error")
@@ -96,13 +98,73 @@ def load_choices() -> dict[str, object] | None:
 
 def save_choices(names: list[str], hooks: bool, *, merge: bool, declined: list[str] | None = None) -> None:
     """Remember the tools configured, the tools the developer turned down, and the hooks choice."""
-    previous = load_choices() if merge else None
+    previous = effective_choices() if merge else None
     clients = set(names) | set(previous["clients"] if previous else [])
     refused = (set(previous["declined"]) if previous else set()) | set(declined or [])
     data = {"clients": sorted(clients), "declined": sorted(refused - clients), "hooks": hooks}
     path = paths.data_dir() / CHOICES_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _configured_now() -> tuple[list[str], bool]:
+    """Tools where some Handoff configuration is in place, and whether any of them has hooks."""
+    clients: list[str] = []
+    hooks = False
+    for integration in INTEGRATIONS:
+        if integration.manual:
+            continue
+        state = integrations.status(integration)
+        if any(state.values()):  # anything Handoff left there, even if part of it is now missing
+            clients.append(integration.name)
+            hooks = hooks or bool(state["context"] or state["save"])
+    return clients, hooks
+
+
+def effective_choices() -> dict[str, object] | None:
+    """The saved choices, completed with every tool where Handoff is already configured.
+
+    Installs older than 0.2.0 have no saved choices, and a first targeted run such as
+    'handoff setup --client copilot' only names one tool: a tool with Handoff in place
+    always counts as chosen.
+    """
+    saved = load_choices()
+    present, hooks = _configured_now()
+    if saved is None:
+        return {"clients": present, "declined": [], "hooks": hooks} if present else None
+    clients = sorted(set(saved["clients"]) | set(present))
+    declined = [name for name in saved["declined"] if name not in clients]
+    return {"clients": clients, "declined": declined, "hooks": saved["hooks"]}
+
+
+def running_from_dev_copy() -> bool:
+    """Whether this Handoff is an editable install (pip install -e), such as a clone being developed."""
+    try:
+        text = importlib.metadata.distribution("ai-handoff").read_text("direct_url.json")
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    return is_editable(text)
+
+
+def is_editable(direct_url: str | None) -> bool:
+    """Read the direct_url.json that pip writes for an install from a folder or a URL."""
+    try:
+        data = json.loads(direct_url or "{}")
+    except ValueError:
+        return False
+    return bool(
+        isinstance(data, dict) and isinstance(data.get("dir_info"), dict) and data["dir_info"].get("editable")
+    )
+
+
+def _confirm_dev_copy(*, yes: bool, interactive: bool) -> bool:
+    """Warn that the tools would start a development copy; return False to stop."""
+    if not running_from_dev_copy():
+        return True
+    _say(t("setup.dev_copy", python=sys.executable), "warning")
+    if yes or not interactive:
+        return True
+    return ask_yes(t("setup.dev_copy_continue"), default=False)
 
 
 def clear_choices() -> None:
@@ -118,6 +180,9 @@ def run_setup(
         _say(t("setup.none_detected"), "muted")
         return 0
     _say(t("setup.detected", clients=", ".join(integration.label for integration in chosen)), "bold")
+    if not dry_run and not _confirm_dev_copy(yes=yes, interactive=interactive):
+        _say(t("purge.cancelled"), "muted")
+        return 1
 
     automatic = False
     # Tab completion goes with a full setup, not with a run targeting some tools.
@@ -217,10 +282,13 @@ def run_remove(*, yes: bool, dry_run: bool, interactive: bool) -> int:
 
 def run_fix(*, yes: bool, dry_run: bool, interactive: bool) -> int:
     """Repair what is missing in the tools chosen at setup, keeping the developer's choices."""
-    choices = load_choices()
+    choices = effective_choices()
     if choices is None:
         _say(t("doctor.no_choices"), "warning")
         return 0
+    if not dry_run and not _confirm_dev_copy(yes=yes, interactive=interactive):
+        _say(t("purge.cancelled"), "muted")
+        return 1
     known = {integration.name: integration for integration in INTEGRATIONS}
     found = {integration.name for integration in integrations.detected()}
     chosen = [known[name] for name in choices["clients"] if name in known and name in found]
@@ -272,7 +340,7 @@ def _cell(value: bool | None, *, off: bool = False) -> Text:
 
 def doctor() -> tuple[Table, bool]:
     """The state of each tool, and whether 'handoff doctor --fix' has something to do."""
-    choices = load_choices()
+    choices = effective_choices()
     chosen = set(choices["clients"]) if choices else set()
     hooks_off = choices is not None and not choices["hooks"]
     table = Table(box=box.SIMPLE_HEAD, header_style="bold", pad_edge=False)
@@ -289,7 +357,7 @@ def doctor() -> tuple[Table, bool]:
             continue  # not installed here, and not connected either
         notes = []
         if integration.manual:
-            notes.append(t("setup.manual", reason=integration.manual))
+            notes.append(t("setup.manual", reason=t(integration.manual)))
         elif integration.name not in chosen:
             notes.append(t("doctor.run_setup") if state["mcp"] is False else "")
             if choices and integration.name not in choices["declined"]:
@@ -299,7 +367,7 @@ def doctor() -> tuple[Table, bool]:
             for kind, value in state.items()
         ):
             needs_fix = True
-        notes += integration.notes
+        notes += [t(note) for note in integration.notes]
         table.add_row(
             Text(integration.label, style="bold"),
             *(

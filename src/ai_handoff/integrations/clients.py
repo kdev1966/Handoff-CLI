@@ -109,8 +109,8 @@ class Integration:
     label: str
     detect: Callable[[], bool]
     parts: Callable[[], list[Part]] = list
-    manual: str | None = None  # why this client cannot be configured automatically
-    notes: list[str] = field(default_factory=list)
+    manual: str | None = None  # message key: why this client cannot be configured automatically
+    notes: list[str] = field(default_factory=list)  # message keys
 
 
 # Hooks
@@ -224,7 +224,7 @@ INTEGRATIONS: list[Integration] = [
             ),
             claude_plugin(),
         ],
-        notes=["Hooks are installed as the Claude Code plugin handoff@handoff."],
+        notes=["note.claude_plugin"],
     ),
     Integration(
         "codex",
@@ -242,7 +242,7 @@ INTEGRATIONS: list[Integration] = [
             ),
             MarkdownBlock(home() / ".codex" / "AGENTS.md", instructions),
         ],
-        notes=["Codex runs new hooks only after you approve them once with /hooks."],
+        notes=["note.codex_hooks"],
     ),
     Integration(
         "gemini",
@@ -291,7 +291,7 @@ INTEGRATIONS: list[Integration] = [
             JsonEntry(vscode_user_dir() / "mcp.json", ("servers",), stdio_entry(type="stdio")),
             *copilot_shared_parts(),
         ],
-        notes=["Hooks and instructions are the ~/.copilot files shared with Copilot CLI."],
+        notes=["note.vscode_shared"],
     ),
     Integration(
         "cursor",
@@ -307,7 +307,7 @@ INTEGRATIONS: list[Integration] = [
         "Claude Desktop",
         lambda: _exists(claude_desktop_config().parent),
         lambda: [JsonEntry(claude_desktop_config(), ("mcpServers",), stdio_entry())],
-        notes=["No project folder: the assistant must give the project path. Restart the app to load it."],
+        notes=["note.claude_desktop"],
     ),
     Integration(
         "cline",
@@ -346,7 +346,7 @@ INTEGRATIONS: list[Integration] = [
             ),
             MarkdownBlock(home() / ".junie" / "AGENTS.md", instructions),
         ],
-        notes=["Junie's session start cannot inject context; its instructions file does the job."],
+        notes=["note.junie"],
     ),
     Integration(
         "windsurf",
@@ -375,13 +375,13 @@ INTEGRATIONS: list[Integration] = [
             JsonEntry(zed_dir() / "settings.json", ("context_servers",), stdio_entry()),
             MarkdownBlock(zed_dir() / "AGENTS.md", instructions),
         ],
-        notes=["Zed settings usually contain comments; Handoff then leaves them unchanged."],
+        notes=["note.zed"],
     ),
     Integration(
         "continue",
         "Continue",
         lambda: _exists(home() / ".continue"),
-        manual="its configuration is YAML; add the server with 'handoff setup --print-config'.",
+        manual="manual.continue",
     ),
 ]
 

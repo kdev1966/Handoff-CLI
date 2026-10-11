@@ -27,6 +27,9 @@ def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(parts.shutil, "which", lambda _name: None)
     monkeypatch.setattr(clients.shutil, "which", lambda _name: None)
     monkeypatch.setattr(completion, "detect_shell", lambda: None)  # tests that want a shell set it
+    from ai_handoff import setup_flow
+
+    monkeypatch.setattr(setup_flow, "running_from_dev_copy", lambda: False)  # the tests run from a clone
     return home
 
 
@@ -436,3 +439,100 @@ def test_remove_forgets_the_choices(capsys, fake_home: Path) -> None:
     run_cli(capsys, "setup", "--yes", "--client", "cursor")
     run_cli(capsys, "setup", "--remove", "--yes")
     assert setup_flow.load_choices() is None
+
+
+def test_cli_failure_falls_back_to_the_file(fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_cli(monkeypatch, fail="mcp add")  # an old Copilot CLI without 'mcp add'
+    path = fake_home / ".copilot" / "mcp-config.json"
+    fallback = parts.JsonEntry(path, ("mcpServers",), lambda: {"command": "py"})
+    parts.CliMcp(
+        "copilot", lambda cmd: ["mcp", "add", "handoff"], ["mcp", "remove", "handoff"], bool, fallback
+    ).apply(Session())
+    assert load(path)["mcpServers"]["handoff"] == {"command": "py"}
+
+
+def test_choices_are_inferred_for_installs_older_than_0_2_0(capsys, fake_home: Path) -> None:
+    from ai_handoff import setup_flow
+
+    (fake_home / ".cursor").mkdir()
+    integrations.apply([clients.by_name("cursor")], hooks=True, dry_run=False)  # set up, no setup.json
+    assert setup_flow.load_choices() is None
+    assert setup_flow.effective_choices() == {"clients": ["cursor"], "declined": [], "hooks": True}
+    (fake_home / ".cursor" / "mcp.json").write_text('{"mcpServers": {}}', encoding="utf-8")
+    assert "doctor --fix" in run_cli(capsys, "doctor")[1]
+    assert run_cli(capsys, "doctor", "--fix", "--yes")[0] == 0
+    assert "handoff" in load(fake_home / ".cursor" / "mcp.json")["mcpServers"]
+
+
+def test_setup_warns_from_a_development_copy(
+    capsys, fake_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_handoff import setup_flow
+
+    (fake_home / ".cursor").mkdir()
+    monkeypatch.setattr(setup_flow, "running_from_dev_copy", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")  # Enter: the default is no
+    monkeypatch.setattr(sys, "stdin", type("TTY", (io.StringIO,), {"isatty": lambda self: True})())
+    code, out = run_cli(capsys, "setup")
+    assert code == 1
+    assert "development copy" in out
+    assert not (fake_home / ".cursor" / "mcp.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("direct_url", "expected"),
+    [
+        ('{"url": "file:///src", "dir_info": {"editable": true}}', True),
+        ('{"url": "file:///src", "dir_info": {}}', False),
+        ('{"url": "https://files.pythonhosted.org/x.whl", "archive_info": {}}', False),
+        (None, False),
+        ("not json", False),
+    ],
+)
+def test_editable_install_detection(direct_url: str | None, expected: bool) -> None:
+    from ai_handoff import setup_flow
+
+    assert setup_flow.is_editable(direct_url) is expected
+
+
+def test_notes_are_translated(capsys, fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_handoff import i18n
+
+    (fake_home / ".continue").mkdir()
+    (fake_home / ".copilot").mkdir()
+    monkeypatch.setenv("HANDOFF_LANG", "fr")
+    monkeypatch.setenv("COLUMNS", "220")  # keep each note on one line
+    i18n.set_language(None)
+    out = run_cli(capsys, "doctor")[1]
+    assert "sa configuration est en YAML" in out
+    assert "Les hooks et la consigne" not in out or "partagés" in out
+
+
+def test_every_note_and_manual_reason_is_translated() -> None:
+    from ai_handoff.locales import MESSAGES
+
+    keys = {note for integration in clients.INTEGRATIONS for note in integration.notes}
+    keys |= {integration.manual for integration in clients.INTEGRATIONS if integration.manual}
+    for language, catalog in MESSAGES.items():
+        assert keys <= catalog.keys(), language
+
+
+def test_a_targeted_first_setup_keeps_the_tools_already_configured(capsys, fake_home: Path) -> None:
+    from ai_handoff import setup_flow
+
+    (fake_home / ".cursor").mkdir()
+    (fake_home / ".kiro").mkdir()
+    integrations.apply([clients.by_name("cursor")], hooks=True, dry_run=False)  # configured before 0.2.0
+    assert run_cli(capsys, "setup", "--yes", "--client", "kiro")[0] == 0  # first run that saves choices
+    assert setup_flow.load_choices()["clients"] == ["cursor", "kiro"]
+    out = run_cli(capsys, "doctor", "--fix", "--yes")[1]
+    assert "New AI tools" not in out
+    assert "Everything is in place" in out
+
+
+def test_a_tool_configured_by_hand_since_is_not_new(capsys, fake_home: Path) -> None:
+    (fake_home / ".cursor").mkdir()
+    (fake_home / ".kiro").mkdir()
+    assert run_cli(capsys, "setup", "--yes", "--client", "cursor")[0] == 0
+    integrations.apply([clients.by_name("kiro")], hooks=True, dry_run=False)  # not through setup
+    assert "New AI tools" not in run_cli(capsys, "doctor", "--fix", "--yes")[1]

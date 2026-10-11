@@ -311,6 +311,8 @@ python -m venv .venv
 python scripts/screenshots.py         # regenerate the README screenshots
 ```
 
+Run `handoff setup` from your installed Handoff, not from this development copy: the AI tools start the Python that ran `setup`. Handoff warns you if you do.
+
 CI runs the tests on Windows, macOS and Linux with Python 3.10, 3.12 and 3.14, plus the install scripts on all three systems. To publish a release: update `__version__` in `src/ai_handoff/__init__.py`, push the matching `vX.Y.Z` tag, then approve the `pypi` deployment in GitHub Actions. PyPI publishing uses *trusted publishing*, with no stored token, and also creates the GitHub release. Changes are listed in [CHANGELOG.md](https://github.com/kdev1966/Handoff-CLI/blob/main/CHANGELOG.md).
 
 ## License

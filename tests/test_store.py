@@ -275,3 +275,12 @@ def test_restore_keeps_the_assistants_baseline(project: Project) -> None:
 def test_warnings(project: Project, summary: str, next_actions: str, expected: list[str]) -> None:
     with Store() as store:
         assert save(store, project, summary=summary, next_actions=next_actions).warnings() == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [("Copilot", "copilot"), ("CODEX", "codex"), ("Claude", "claude-code"), ("MyBot", "MyBot")],
+)
+def test_known_agent_names_ignore_case(project: Project, name: str, expected: str) -> None:
+    with Store() as store:
+        assert save(store, project, agent=name).agent == expected

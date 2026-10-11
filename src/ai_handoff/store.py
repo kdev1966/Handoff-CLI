@@ -64,9 +64,27 @@ PLACEHOLDER_SUMMARIES = {
 MIN_SUMMARY_LENGTH = 20
 
 
+# Canonical names of the tools Handoff knows, matched without regard to case.
+KNOWN_AGENTS = {
+    *AGENT_ALIASES.values(),
+    "codex",
+    "cursor",
+    "junie",
+    "opencode",
+    "cline",
+    "kiro",
+    "windsurf",
+    "antigravity",
+    "zed",
+}
+
+
 def canonical_agent(agent: str) -> str:
     agent = agent.strip()
-    return AGENT_ALIASES.get(agent.lower(), agent)
+    lowered = agent.lower()
+    if lowered in AGENT_ALIASES:
+        return AGENT_ALIASES[lowered]
+    return lowered if lowered in KNOWN_AGENTS else agent
 
 
 # Control characters other than tab and newline.
