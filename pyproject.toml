@@ -34,6 +34,8 @@ handoff = "ai_handoff.cli:main"
 [project.urls]
 Homepage = "https://github.com/kdev1966/Handoff-CLI"
 Issues = "https://github.com/kdev1966/Handoff-CLI/issues"
+Changelog = "https://github.com/kdev1966/Handoff-CLI/blob/main/CHANGELOG.md"
+"Documentation (français)" = "https://github.com/kdev1966/Handoff-CLI/blob/main/README.fr.md"
 
 [tool.hatch.version]
 path = "src/ai_handoff/__init__.py"
