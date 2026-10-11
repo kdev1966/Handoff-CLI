@@ -12,21 +12,23 @@ Il fonctionne sous **Windows, macOS et Linux**, via le standard [MCP](https://mo
 ## Fonctionnement
 
 ```text
- Claude / Copilot / Cursor / Gemini / Codex
-        │  MCP (stdio, local : aucun port réseau)
-        ▼
-   handoff serve ──┐
-   handoff save  ──┼──► base SQLite locale (historique en ajout seul)
-   handoff show  ──┘
-        │
-        ▼
-   <projet>/.handoff/context.md   (vue générée, ignorée par git)
+ Claude Code / Copilot / Cursor / Gemini / Codex …
+        │  MCP (stdio, local : aucun port réseau)   │  hooks : début de session, fin de tour
+        ▼                                            ▼
+   handoff serve                              handoff hook
+        │                                            │
+        └──────────────┬─────────────────────────────┘
+                       ▼
+        base SQLite locale (historique en ajout seul)  ◄── handoff save / show / log / stats …
+                       │
+                       ▼
+        <projet>/.handoff/context.md   (vue générée, ignorée par git)
 ```
 
 - **En début de session**, la mémoire du projet est donnée à l'assistant : automatiquement par un hook quand l'outil le permet, sinon l'assistant l'obtient avec l'outil `memory_get`, comme le lui indique la consigne posée par `handoff setup`.
-- **Avant de s'arrêter**, si le code a changé depuis la dernière passation, l'assistant est invité une fois à en enregistrer une (`memory_save`).
+- **Avant de s'arrêter**, si le code a changé depuis le début de la session ou depuis la dernière passation d'un assistant, l'assistant est invité une fois à en enregistrer une (`memory_save`).
 - Le projet est identifié par son **remote git** (`origin`). La mémoire suit donc le dépôt même si vous le déplacez ou le clonez à nouveau. Sans remote, c'est le chemin du dossier qui sert d'identifiant.
-- Chaque passage de relais est **ajouté** à l'historique : rien n'est écrasé et vous pouvez revenir à un état antérieur.
+- Chaque passation est **ajoutée** à l'historique : rien n'est écrasé et vous pouvez revenir à un état antérieur.
 
 ## Installation
 
@@ -64,7 +66,7 @@ Le script :
 - installe Handoff dans un environnement virtuel privé, sans droits administrateur ni `sudo` ;
 - ajoute la commande `handoff` à votre `PATH` ;
 - à la première installation, vous propose deux modes :
-  1. **Automatique** : tous les outils IA trouvés sont connectés avec les valeurs par défaut (lecture et enregistrement automatiques), sans autre question, et un récapitulatif s'affiche ;
+  1. **Automatique** : tous les outils IA trouvés sont connectés avec les valeurs par défaut (lecture et enregistrement automatiques), l'autocomplétion avec Tab est installée, sans autre question, et un récapitulatif s'affiche ;
   2. **Manuelle** : l'assistant `handoff setup` détaillé ci-dessous, où vous choisissez les outils et les options, voyez les changements prévus et confirmez.
 
 Lors d'une mise à jour, la question n'est pas reposée : la configuration de vos outils est conservée.
@@ -95,16 +97,16 @@ Avec pipx ou uv, désinstallez avec `handoff setup --remove`, `handoff completio
 `handoff setup` détecte les outils IA installés et propose le mode automatique ou manuel. En mode manuel, il vous laisse choisir, montre les changements prévus, puis les applique après confirmation :
 
 ```text
-Comment voulez-vous configurer vos outils IA ?
+Outils IA trouvés sur cette machine : Claude Code, Gemini CLI, Copilot CLI, VS Code, Cline, Kiro…
   1) Automatique : tous les outils trouvés, lecture et enregistrement automatiques (recommandé)
   2) Manuelle : choisir les outils et les options
-> 2
-Outils IA trouvés sur cette machine : Claude Code, Gemini CLI, Copilot CLI, VS Code, Cline, Kiro…
-Que voulez-vous configurer ?
+Comment voulez-vous configurer vos outils IA ? [1] 2
   1) Tous les outils trouvés
   2) Choisir outil par outil
   3) Rien pour l'instant (plus tard : handoff setup)
+Que voulez-vous configurer ? [1] 1
 Lire et enregistrer la mémoire automatiquement (hooks) quand l'outil le permet ? [O/n]
+Installer l'autocomplétion avec Tab pour la commande handoff (zsh) ? [O/n]
 Changements prévus (chaque fichier est sauvegardé avant modification) :
   · Gemini CLI
       ~/.gemini/settings.json: mcpServers.handoff
@@ -150,11 +152,11 @@ Ce que Handoff configure, selon ce que chaque outil permet :
 
 | Outil | Rôle | Type |
 |---|---|---|
-| `memory_get(project_path)` | Lit le dernier passage de relais du projet | lecture seule |
-| `memory_save(project_path, summary, next_actions, stack?, agent?)` | Enregistre un nouveau passage de relais | ajout, non destructif |
-| `memory_history(project_path, limit?)` | Liste les passages de relais précédents | lecture seule |
+| `memory_get(project_path)` | Lit la dernière passation du projet | lecture seule |
+| `memory_save(project_path, summary, next_actions, stack?, agent?)` | Enregistre une nouvelle passation | ajout, non destructif |
+| `memory_history(project_path, limit?)` | Liste les passations précédentes | lecture seule |
 
-Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL.
+Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL. `memory_save` renvoie un avertissement quand le résumé est vide de sens ou que les prochaines actions manquent, pour que l'assistant complète sa passation.
 
 ## CLI
 
@@ -172,7 +174,7 @@ Handoff s'utilise comme `git` : on tape `handoff <commande>` dans le terminal. C
 | `handoff stats` | Carte d'activité sur 12 semaines, répartition par agent et par branche |
 | `handoff list` | Tous les projets, avec dernier agent, mini-courbe d'activité et statut (actif, inactif, en pause) |
 | `handoff history [-l N]` | Passations précédentes en détail |
-| `handoff save -s "état" -n "suite" [--stack "…"]` | Enregistre une passation (`-` lit l'entrée standard) |
+| `handoff save -s "état" -n "suite" [--stack "…"] [-a agent]` | Enregistre une passation (`-` lit l'entrée standard) ; sans `-a`, l'agent est `cli` (vous) |
 | `handoff restore ID` | Rétablit une ancienne passation comme la plus récente |
 | `handoff pause` / `handoff resume` | Suspend ou reprend le suivi d'un projet (travail confidentiel) |
 | `handoff purge [--key KEY] [-y]` | Supprime toute la mémoire d'un projet |
@@ -206,12 +208,12 @@ Chaque passation enregistre la branche git et le commit courants : ils apparaiss
 
 Après chaque enregistrement, Handoff génère `.handoff/context.md` à la racine du projet. Ce dossier contient son propre `.gitignore` : il n'apparaît jamais dans `git status` et votre `.gitignore` n'est pas modifié. Un assistant sans MCP peut lire ce fichier, puis enregistrer avec `handoff save`. Ne modifiez pas ce fichier à la main : il est régénéré.
 
-Pour qu'un outil le lise automatiquement, ajoutez une ligne de renvoi dans le fichier d'instructions qu'il lit déjà (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`…), par exemple : « Lis `.handoff/context.md` en début de session. »
+Pour les outils pris en charge, `handoff setup` écrit déjà cette consigne dans leur fichier d'instructions global. Pour un autre outil, ajoutez une ligne de renvoi dans le fichier d'instructions qu'il lit (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`…), par exemple : « Lis `.handoff/context.md` en début de session. »
 
 ## Sécurité
 
 - **Local uniquement** : le serveur MCP communique en stdio et n'ouvre aucun port réseau.
-- **Hooks sans risque pour l'outil** : ils ne lancent que `handoff` (chemin absolu de son interpréteur), ne lisent que l'état git du projet, et en cas de problème n'affichent rien et laissent l'outil continuer.
+- **Hooks sans risque pour l'outil** : ils ne lancent que `handoff` (chemin absolu de son interpréteur), ne lisent que la mémoire et l'état git du projet, et en cas de problème n'affichent rien et laissent l'outil continuer.
 - **Pas de pré-autorisation** : Handoff ne s'accorde jamais de permissions dans vos outils IA.
 - **Surface réduite** : 3 outils au schéma typé, pas de SQL brut, pas de suppression par l'IA.
 - **Chemins validés** : le chemin doit être absolu et exister. La racine du disque, le dossier personnel et ses parents sont refusés.
@@ -230,7 +232,9 @@ Pour qu'un outil le lise automatiquement, ajoutez une ligne de renvoi dans le fi
 | macOS | `~/Library/Application Support/handoff/` |
 | Linux | `$XDG_DATA_HOME/handoff/` (par défaut `~/.local/share/handoff/`) |
 
-La variable d'environnement `HANDOFF_HOME` permet de choisir un autre dossier.
+Il contient la base `memory.db`, les sauvegardes des fichiers modifiés par `handoff setup` (`backups/`), les scripts d'autocomplétion (`completion/`), le plugin Claude Code (`claude-marketplace/`) et, en cas d'erreur d'un hook, `hooks.log`. La variable d'environnement `HANDOFF_HOME` permet de choisir un autre dossier.
+
+Le script d'installation place Handoff lui-même dans `~/.local/share/handoff/venv` (macOS et Linux) ou `%LOCALAPPDATA%\handoff\venv` (Windows).
 
 ## Limites
 
@@ -249,7 +253,7 @@ python -m venv .venv
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
 
-La CI exécute les tests sous Windows, macOS et Linux avec Python 3.10, 3.12 et 3.14. Une release est publiée sur PyPI (par *trusted publishing*) quand un tag `vX.Y.Z` correspondant à la version du paquet est poussé.
+La CI exécute les tests sous Windows, macOS et Linux avec Python 3.10, 3.12 et 3.14, ainsi que les scripts d'installation sur les trois systèmes. Pour publier une version : mettre à jour `__version__` dans `src/ai_handoff/__init__.py`, pousser le tag `vX.Y.Z` correspondant, puis approuver le déploiement `pypi` dans GitHub Actions. La publication sur PyPI se fait par *trusted publishing*, sans jeton stocké, et crée aussi la release GitHub.
 
 ## Licence
 
