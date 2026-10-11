@@ -1,5 +1,7 @@
 # Handoff
 
+[![PyPI](https://img.shields.io/pypi/v/ai-handoff.svg)](https://pypi.org/project/ai-handoff/)
+[![Python](https://img.shields.io/pypi/pyversions/ai-handoff.svg)](https://pypi.org/project/ai-handoff/)
 [![CI](https://github.com/kdev1966/Handoff-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/kdev1966/Handoff-CLI/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -28,7 +30,23 @@ Il fonctionne sous **Windows, macOS et Linux**, via le standard [MCP](https://mo
 
 ## Installation
 
-Une seule commande, qui sert aussi à mettre à jour. Python 3.10 ou plus doit être installé.
+Handoff est publié sur PyPI sous le nom [`ai-handoff`](https://pypi.org/project/ai-handoff/). Python 3.10 ou plus doit être installé. Deux façons de l'installer :
+
+### Avec pipx ou uv
+
+Si vous utilisez déjà un gestionnaire d'outils Python :
+
+```bash
+pipx install ai-handoff        # ou : uv tool install ai-handoff
+handoff setup                  # connecte vos outils IA (mode automatique ou manuel)
+handoff completion --install   # autocomplétion avec Tab (facultatif)
+```
+
+Mise à jour : `pipx upgrade ai-handoff` (ou `uv tool upgrade ai-handoff`).
+
+### Avec le script d'installation
+
+Une seule commande, qui installe la dernière version publiée sur PyPI, lance la configuration et sert aussi à mettre à jour :
 
 **macOS / Linux :**
 
@@ -55,7 +73,7 @@ Vous pouvez lire le script avant de l'exécuter : il est court et commenté. Var
 
 | Variable | Effet |
 |---|---|
-| `HANDOFF_VERSION=v0.1.0` | installe une version précise (par défaut : `main`) |
+| `HANDOFF_VERSION=0.1.0` | installe une version publiée précise (par défaut : la dernière) ; `HANDOFF_VERSION=main` installe la branche GitHub, pour essayer du code pas encore publié |
 | `HANDOFF_NO_SETUP=1` | ne lance pas l'assistant de configuration (vous le lancerez avec `handoff setup`) |
 | `HANDOFF_SETUP_YES=1` | connecte tous les outils trouvés, hooks compris, sans poser de questions |
 | `HANDOFF_NO_MODIFY_PATH=1` | ne modifie pas le `PATH` |
@@ -70,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.s
 powershell -ExecutionPolicy ByPass -c "$env:HANDOFF_UNINSTALL=1; irm https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.ps1 | iex"
 ```
 
-Si vous préférez un gestionnaire d'outils Python : `pipx install git+https://github.com/kdev1966/Handoff-CLI` ou `uv tool install git+https://github.com/kdev1966/Handoff-CLI`.
+Avec pipx ou uv, désinstallez avec `handoff setup --remove`, `handoff completion --uninstall`, puis `pipx uninstall ai-handoff` (ou `uv tool uninstall ai-handoff`).
 
 ## Connecter vos assistants
 
