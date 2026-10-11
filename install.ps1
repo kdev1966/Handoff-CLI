@@ -6,7 +6,8 @@
 #     powershell -ExecutionPolicy ByPass -c "$env:HANDOFF_UNINSTALL=1; irm https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.ps1 | iex"
 #
 # Environment variables:
-#   HANDOFF_VERSION=v0.1.0     tag or branch to install (default: main)
+#   HANDOFF_VERSION=0.1.0      a released version from PyPI (default: the latest release),
+#                              or a GitHub branch such as 'main' to try unreleased code
 #   HANDOFF_SOURCE=<pip spec>  install from this pip requirement instead (a folder, a wheel...)
 #   HANDOFF_NO_SETUP=1         skip the setup assistant (run 'handoff setup' later)
 #   HANDOFF_SETUP_YES=1        connect every AI tool found, without questions
@@ -58,8 +59,16 @@ function Invoke-HandoffInstaller {
         if (-not $python) {
             throw 'Python 3.10 or newer is required. Install it from https://www.python.org/downloads/ (or: winget install Python.Python.3.13), then run this installer again.'
         }
-        $version = if ($env:HANDOFF_VERSION) { $env:HANDOFF_VERSION } else { 'main' }
-        $source = if ($env:HANDOFF_SOURCE) { $env:HANDOFF_SOURCE } else { "https://github.com/$repo/archive/$version.tar.gz" }
+        $version = $env:HANDOFF_VERSION
+        $source = if ($env:HANDOFF_SOURCE) {
+            $env:HANDOFF_SOURCE
+        } elseif (-not $version) {
+            'ai-handoff'  # the latest release on PyPI
+        } elseif ($version -match '^v?\d') {
+            "ai-handoff==$($version.TrimStart('v'))"
+        } else {
+            "https://github.com/$repo/archive/$version.tar.gz"  # a branch
+        }
         Write-Host "Installing Handoff with $(& $python --version) from $source"
 
         New-Item -ItemType Directory -Force -Path $root | Out-Null

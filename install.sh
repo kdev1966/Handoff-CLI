@@ -7,7 +7,8 @@
 #     curl -fsSL https://raw.githubusercontent.com/kdev1966/Handoff-CLI/main/install.sh | sh -s -- --uninstall
 #
 # Environment variables:
-#   HANDOFF_VERSION=v0.1.0     tag or branch to install (default: main)
+#   HANDOFF_VERSION=0.1.0      a released version from PyPI (default: the latest release),
+#                              or a GitHub branch such as 'main' to try unreleased code
 #   HANDOFF_SOURCE=<pip spec>  install from this pip requirement instead (a folder, a wheel...)
 #   HANDOFF_NO_SETUP=1         skip the setup assistant (run 'handoff setup' later)
 #   HANDOFF_SETUP_YES=1        connect every AI tool found, without questions
@@ -19,6 +20,7 @@
 set -eu
 
 REPO="kdev1966/Handoff-CLI"
+PACKAGE="ai-handoff"
 VENV_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/handoff/venv"
 BIN_DIR="$HOME/.local/bin"
 PATH_MARKER="# added by the Handoff installer"
@@ -99,12 +101,25 @@ run_setup() {
     fi
 }
 
+package_source() {
+    if [ -n "${HANDOFF_SOURCE:-}" ]; then
+        printf '%s\n' "$HANDOFF_SOURCE"
+        return
+    fi
+    case "${HANDOFF_VERSION:-}" in
+        "") printf '%s\n' "$PACKAGE" ;; # the latest release on PyPI
+        v[0-9]*) printf '%s==%s\n' "$PACKAGE" "${HANDOFF_VERSION#v}" ;;
+        [0-9]*) printf '%s==%s\n' "$PACKAGE" "$HANDOFF_VERSION" ;;
+        *) printf 'https://github.com/%s/archive/%s.tar.gz\n' "$REPO" "$HANDOFF_VERSION" ;; # a branch
+    esac
+}
+
 install() {
     python="$(find_python)" || fail "Python 3.10 or newer is required. Install it from https://www.python.org/downloads/ or your package manager (macOS: 'brew install python'), then run this installer again."
     "$python" -c 'import venv, ensurepip' 2>/dev/null ||
         fail "$python cannot create virtual environments. On Debian/Ubuntu: sudo apt install python3-venv"
 
-    source="${HANDOFF_SOURCE:-https://github.com/$REPO/archive/${HANDOFF_VERSION:-main}.tar.gz}"
+    source="$(package_source)"
     say "Installing Handoff with $("$python" --version 2>&1) from $source"
 
     upgrade=""
