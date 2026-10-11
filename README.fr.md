@@ -162,7 +162,7 @@ Ce que Handoff configure, selon ce que chaque outil permet :
 | `memory_save(project_path, summary, next_actions, stack?, agent?)` | Enregistre une nouvelle passation | ajout, non destructif |
 | `memory_history(project_path, limit?)` | Liste les passations précédentes | lecture seule |
 
-Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL. `memory_save` renvoie un avertissement quand le résumé est vide de sens ou que les prochaines actions manquent, pour que l'assistant complète sa passation.
+Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL. `memory_save` renvoie un avertissement quand le résumé est vide de sens, que les prochaines actions manquent, qu'un champ est long (plus de 4 Ko) ou que l'agent ne donne pas son nom, pour que l'assistant corrige sa passation.
 
 ## CLI
 
@@ -192,7 +192,7 @@ Handoff s'utilise comme `git` : on tape `handoff <commande>` dans le terminal. C
 
 Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé avec `--path`.
 
-`handoff save` (comme l'outil `memory_save`) **avertit**, sans refuser, quand le résumé est très court ou ne dit rien, ou quand les prochaines actions manquent. Une passation enregistrée à la main (`handoff save` sans `--agent`) ne dispense pas l'assistant de documenter son propre travail : il sera quand même invité à enregistrer le sien. Les noms d'agents connus sont unifiés (`claude` → `claude-code`, `gemini` → `gemini-cli`…), pour qu'un même outil n'apparaisse pas sous deux noms. `show`, `log`, `history`, `stats` et `list` acceptent `--json` pour les scripts.
+`handoff save` (comme l'outil `memory_save`) **avertit**, sans refuser, quand le résumé est très court ou ne dit rien, quand les prochaines actions manquent, ou quand un champ dépasse 4 Ko (la limite stricte reste 16 Ko). Une passation enregistrée à la main (`handoff save` sans `--agent`) ne dispense pas l'assistant de documenter son propre travail : il sera quand même invité à enregistrer le sien. Les noms d'agents connus sont unifiés (`claude` → `claude-code`, `gemini` → `gemini-cli`…), pour qu'un même outil n'apparaisse pas sous deux noms. `show`, `log`, `history`, `stats` et `list` acceptent `--json` pour les scripts.
 
 Chaque passation enregistre la branche git et le commit courants : ils apparaissent dans `show`, `log` et `diff`.
 

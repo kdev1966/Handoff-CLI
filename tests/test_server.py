@@ -100,3 +100,22 @@ async def test_save_warns_about_empty_handoffs(project: Project) -> None:
     assert not result.is_error
     assert "summary is very short" in text
     assert "no next actions" in text
+    assert "no agent name" in text
+
+
+async def test_save_warns_about_long_handoffs_without_failing(project: Project) -> None:
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "memory_save",
+            {
+                "project_path": str(project.root),
+                "summary": "Auth module done. " * 300,
+                "next_actions": "Write the integration tests",
+                "agent": "codex",
+            },
+        )
+    text = text_of(result)
+    assert not result.is_error
+    assert "Saved handoff #1" in text
+    assert "this handoff is long" in text
+    assert "no agent name" not in text

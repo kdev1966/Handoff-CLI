@@ -16,6 +16,8 @@ from ai_handoff.redact import redact
 
 SCHEMA_VERSION = 3
 MAX_FIELD_BYTES = 16 * 1024
+# Above this size, memory_save still succeeds but warns: the handoff is read at every session start.
+LONG_FIELD_BYTES = 4 * 1024
 MAX_HISTORY = 100
 BUSY_TIMEOUT_SECONDS = 10
 
@@ -23,6 +25,8 @@ _AGENT = re.compile(r"[\w .:/@+-]{1,64}")
 
 # The agent name used by 'handoff save' when a person saves by hand.
 CLI_AGENT = "cli"
+# The agent name stored when an assistant does not give one.
+UNKNOWN_AGENT = "unknown"
 
 # Names assistants give themselves, mapped to one name per tool, so that the same tool
 # is not split across several lanes and counts.
@@ -163,6 +167,10 @@ class Handoff:
             found.append("warning.summary_short")
         if not self.next_actions.strip():
             found.append("warning.no_next_actions")
+        if any(len(text.encode("utf-8")) > LONG_FIELD_BYTES for text in (self.summary, self.next_actions)):
+            found.append("warning.long")
+        if self.agent == UNKNOWN_AGENT:
+            found.append("warning.no_agent")
         return found
 
     def git_label(self) -> str | None:
@@ -223,7 +231,7 @@ def clean_field(name: str, value: object, *, required: bool) -> str:
 
 
 def clean_agent(agent: str | None) -> str:
-    agent = (agent or "").strip() or "unknown"
+    agent = (agent or "").strip() or UNKNOWN_AGENT
     if not _AGENT.fullmatch(agent):
         raise ValidationError(t("error.agent_invalid"))
     return canonical_agent(agent)

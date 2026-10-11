@@ -270,11 +270,20 @@ def test_restore_keeps_the_assistants_baseline(project: Project) -> None:
         ("Auth module done, tests pending.", "", ["warning.no_next_actions"]),
         ("todo", "", ["warning.summary_short", "warning.no_next_actions"]),
         ("Auth module done, tests pending.", "Write the integration tests", []),
+        ("Auth module done. " * 300, "Write the integration tests", ["warning.long"]),
+        ("Auth module done, tests pending.", "Write the tests. " * 300, ["warning.long"]),
     ],
 )
 def test_warnings(project: Project, summary: str, next_actions: str, expected: list[str]) -> None:
     with Store() as store:
         assert save(store, project, summary=summary, next_actions=next_actions).warnings() == expected
+
+
+@pytest.mark.parametrize(("agent", "expected"), [("", ["warning.no_agent"]), ("codex", []), ("cli", [])])
+def test_warns_without_agent_name(project: Project, agent: str, expected: list[str]) -> None:
+    with Store() as store:
+        handoff = save(store, project, summary="Auth module done, tests pending.", agent=agent)
+        assert handoff.warnings() == expected
 
 
 @pytest.mark.parametrize(
