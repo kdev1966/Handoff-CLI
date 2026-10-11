@@ -12,7 +12,7 @@ from ai_handoff.context_file import write_context
 from ai_handoff.errors import HandoffError
 from ai_handoff.i18n import set_language, t
 from ai_handoff.project import Project, resolve_project
-from ai_handoff.store import MAX_HISTORY, Store
+from ai_handoff.store import MAX_HISTORY, UNKNOWN_AGENT, Store
 
 INSTRUCTIONS = """\
 Handoff keeps a persistent memory per project so that work can move from one AI assistant to another \
@@ -80,12 +80,13 @@ def memory_save(
     ] = None,
     agent: Annotated[
         str, Field(description="Your name, for example 'claude-code', 'copilot', 'gemini-cli', 'codex'.")
-    ] = "unknown",
+    ] = UNKNOWN_AGENT,
 ) -> str:
     """Save a handoff so the next assistant can continue the work.
 
     Each call adds a new entry; earlier entries are kept as history. Each field is
-    limited to 16 KiB. Common secret formats are masked before saving.
+    limited to 16 KiB; keep it concise, since the latest handoff is read at the start
+    of every session. Common secret formats are masked before saving.
     """
     project = _project(project_path)
     try:

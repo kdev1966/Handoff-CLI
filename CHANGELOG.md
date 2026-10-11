@@ -4,6 +4,16 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-10-11
+
+### Added
+
+- `memory_save` and `handoff save` warn, without refusing, when the summary or the next actions are over
+  4 KB, since the latest handoff is read at the start of every session; the hard limit stays 16 KB
+  ([#14](https://github.com/kdev1966/Handoff-CLI/issues/14)).
+- `memory_save` warns when the assistant gives no agent name, so every handoff in the history says who wrote
+  it ([#17](https://github.com/kdev1966/Handoff-CLI/issues/17)).
+
 ## [0.2.2] - 2026-10-11
 
 ### Added
@@ -88,6 +98,7 @@ First release.
 - English and French interface, detected from the system; Tab completion for zsh, bash and PowerShell.
 - One-command installers for macOS, Linux and Windows.
 
+[0.2.3]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/kdev1966/Handoff-CLI/compare/v0.1.1...v0.2.0

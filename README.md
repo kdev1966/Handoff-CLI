@@ -162,7 +162,7 @@ What Handoff configures, depending on what each tool allows:
 | `memory_save(project_path, summary, next_actions, stack?, agent?)` | Saves a new handoff | append, non-destructive |
 | `memory_history(project_path, limit?)` | Lists earlier handoffs | read-only |
 
-No tool lets an AI delete data or run SQL. `memory_save` returns a warning when the summary says nothing or the next actions are missing, so the assistant can complete its handoff.
+No tool lets an AI delete data or run SQL. `memory_save` returns a warning when the summary says nothing, the next actions are missing, a field is long (over 4 KB) or the agent gives no name, so the assistant can fix its handoff.
 
 ## Command line
 
@@ -192,7 +192,7 @@ Handoff works like `git`: you type `handoff <command>` in your terminal. It is n
 
 Every command works on the current folder, or on the folder given with `--path`.
 
-`handoff save` (like the `memory_save` tool) **warns**, without refusing, when the summary is very short or says nothing, or when the next actions are missing. A handoff saved by hand (`handoff save` without `--agent`) does not excuse the assistant from documenting its own work: it is still asked to save its own. Known agent names are unified (`claude` → `claude-code`, `gemini` → `gemini-cli`…), so that a tool never appears under two names. `show`, `log`, `history`, `stats` and `list` accept `--json` for scripts.
+`handoff save` (like the `memory_save` tool) **warns**, without refusing, when the summary is very short or says nothing, when the next actions are missing, or when a field is over 4 KB (the hard limit stays 16 KB). A handoff saved by hand (`handoff save` without `--agent`) does not excuse the assistant from documenting its own work: it is still asked to save its own. Known agent names are unified (`claude` → `claude-code`, `gemini` → `gemini-cli`…), so that a tool never appears under two names. `show`, `log`, `history`, `stats` and `list` accept `--json` for scripts.
 
 Each handoff records the current git branch and commit: they appear in `show`, `log` and `diff`.
 
