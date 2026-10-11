@@ -4,6 +4,13 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- A "How Handoff compares" section in the README (English and French).
+- Issue templates for bug reports and feature requests.
+
 ## [0.2.1] - 2026-10-11
 
 ### Fixed

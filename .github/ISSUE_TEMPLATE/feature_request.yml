@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an improvement, or support for another AI tool.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe your situation first, for example "I switch from Cursor to Codex and …".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Handoff to do?
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: AI tool concerned (if any)
+      description: For a new tool, a link to its documentation about MCP servers, hooks or global rules helps a lot.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+    validations:
+      required: false
