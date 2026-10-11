@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation (English)
+    url: https://github.com/kdev1966/Handoff-CLI/blob/main/README.md
+    about: Installation, setup of each AI tool, commands and limits.
+  - name: Documentation (français)
+    url: https://github.com/kdev1966/Handoff-CLI/blob/main/README.fr.md
+    about: Installation, configuration des outils IA, commandes et limites.

@@ -285,6 +285,22 @@ Le script d'installation place Handoff lui-même dans `~/.local/share/handoff/ve
 - L'enregistrement automatique repose sur l'état git du projet : hors dépôt git, seule la consigne demande à l'assistant d'enregistrer.
 - Les messages des scripts d'installation sont en anglais ; ceux de `handoff` suivent la langue du système.
 
+## Comparaison avec d'autres outils
+
+Plusieurs outils aident à passer d'un assistant IA à un autre. Ils ne répondent pas au même besoin :
+
+| | Handoff | [continues](https://github.com/yigitkonur/cli-continues) | [handoff-skill](https://github.com/klittle32/handoff-skill) |
+|---|---|---|---|
+| Objectif | le projet se souvient, d'un outil et d'un jour à l'autre | reprendre une conversation précise dans un autre outil, tout de suite | préparer une nouvelle session pour un objectif donné |
+| Source | les passations rédigées par les assistants | les journaux de session des outils | la session en cours, à la demande |
+| Déclenchement | automatique (MCP et hooks) après `handoff setup` | manuel, à chaque changement d'outil | manuel (`/handoff <objectif>`) |
+| Conservé dans le temps | historique en ajout seul : log, diff, stats, export | non | non (fichier jetable) |
+| Configure vos outils | MCP, hooks et consignes dans 14 outils | non | installe la compétence |
+
+Utilisez **continues** quand vous atteignez une limite d'usage en plein travail et voulez que cette conversation précise continue ailleurs : il transmet beaucoup plus de détails (messages, commandes, fichiers touchés) et gère des outils que Handoff ne gère pas (Amp, Roo Code, Kilo Code, Crush, Kimi, Qwen Code, Factory Droid). Utilisez **Handoff** pour que chaque nouvelle session, dans n'importe quel outil, parte de l'état actuel du projet sans rien faire. Les deux sont complémentaires.
+
+*Comparaison établie à partir du README de chaque projet, octobre 2026.*
+
 ## Développement
 
 ```bash

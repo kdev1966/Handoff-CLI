@@ -1,0 +1,74 @@
+name: Bug report
+description: Something does not work as described in the README.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please do not paste secrets, tokens or private
+        project details: handoffs and logs can contain your project's context.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. handoff setup (automatic mode)
+        2. open a new Claude Code session in the project
+        3. …
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Handoff version
+      description: Output of `handoff --version`.
+      placeholder: handoff 0.2.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: AI tools involved
+      description: The assistants and their versions, for example Claude Code 2.1, Copilot CLI, Cursor.
+    validations:
+      required: false
+  - type: input
+    id: install
+    attributes:
+      label: How Handoff was installed
+      placeholder: install script, pipx, uv tool, pip
+    validations:
+      required: false
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `handoff doctor`
+      description: Shows how Handoff is connected to each tool. Remove anything private.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: hooks-log
+    attributes:
+      label: hooks.log (if a hook misbehaves)
+      description: The end of `hooks.log` in the folder shown by `handoff where`. Remove anything private.
+      render: text
+    validations:
+      required: false

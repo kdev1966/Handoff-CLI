@@ -285,6 +285,22 @@ The install script puts Handoff itself in `~/.local/share/handoff/venv` (macOS a
 - Automatic saving relies on the project's git state: outside a git repository, only the instructions ask the assistant to save.
 - The install scripts print English messages; `handoff` follows the system language.
 
+## How Handoff compares
+
+Several tools help you move between AI coding assistants. They solve different problems:
+
+| | Handoff | [continues](https://github.com/yigitkonur/cli-continues) | [handoff-skill](https://github.com/klittle32/handoff-skill) |
+|---|---|---|---|
+| Goal | the project remembers, across tools and days | resume one conversation in another tool, now | brief a fresh session for a stated goal |
+| Source | handoffs written by the assistants | the tools' session transcripts | the current session, on request |
+| Trigger | automatic (MCP and hooks) after `handoff setup` | manual, at each switch | manual (`/handoff <goal>`) |
+| Kept over time | append-only history: log, diff, stats, export | no | no (disposable file) |
+| Configures your tools | MCP, hooks and instructions in 14 tools | no | installs the skill |
+
+Use **continues** when you hit a rate limit in the middle of a task and want that exact conversation to carry on elsewhere: it carries far more detail (messages, commands, file activity) and supports tools Handoff does not (Amp, Roo Code, Kilo Code, Crush, Kimi, Qwen Code, Factory Droid). Use **Handoff** when you want every new session, in any tool, to start from the project's current state without doing anything. The two work well together.
+
+*Compared from each project's README, October 2026.*
+
 ## Development
 
 ```bash
