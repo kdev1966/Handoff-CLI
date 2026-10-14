@@ -33,6 +33,7 @@ It runs on **Windows, macOS and Linux**, through the [MCP](https://modelcontextp
 - **Before stopping**, if the code changed since the session started or since the last handoff written by an assistant, the assistant is asked once to save a handoff (`memory_save`).
 - The project is identified by its **git remote** (`origin`), so the memory follows the repository even if you move it or clone it again. Without a remote, the folder path is the identifier.
 - Every handoff is **appended** to the history: nothing is overwritten, and you can go back to an earlier state.
+- The assistant is told when a handoff may be **out of date**: how many commits the code moved since it was written, and whether it **diverged**, that is, whether another assistant saved a handoff in between that its author never saw. In that case the handoffs saved in between are shown next to it, so the next session can decide what to carry forward.
 
 ## Installation
 
@@ -158,11 +159,11 @@ What Handoff configures, depending on what each tool allows:
 
 | Tool | What it does | Kind |
 |---|---|---|
-| `memory_get(project_path)` | Reads the project's latest handoff | read-only |
-| `memory_save(project_path, summary, next_actions, stack?, agent?)` | Saves a new handoff | append, non-destructive |
+| `memory_get(project_path)` | Reads the project's latest handoff, how far the code moved since, and the handoffs it missed if it diverged | read-only |
+| `memory_save(project_path, summary, next_actions, stack?, agent?, based_on?)` | Saves a new handoff; `based_on` is the handoff the session started from, given at session start (the server knows it after `memory_get`) | append, non-destructive |
 | `memory_history(project_path, limit?)` | Lists earlier handoffs | read-only |
 
-No tool lets an AI delete data or run SQL. `memory_save` returns a warning when the summary says nothing, the next actions are missing, a field is long (over 4 KB) or the agent gives no name, so the assistant can fix its handoff.
+No tool lets an AI delete data or run SQL. `memory_save` returns a warning when the summary says nothing, the next actions are missing, a field is long (over 4 KB) or the agent gives no name, so the assistant can fix its handoff. It also says when the new handoff diverged, so the assistant can read what was saved in between and save again.
 
 ## Command line
 
@@ -194,7 +195,7 @@ Every command works on the current folder, or on the folder given with `--path`.
 
 `handoff save` (like the `memory_save` tool) **warns**, without refusing, when the summary is very short or says nothing, when the next actions are missing, or when a field is over 4 KB (the hard limit stays 16 KB). A handoff saved by hand (`handoff save` without `--agent`) does not excuse the assistant from documenting its own work: it is still asked to save its own. Known agent names are unified (`claude` → `claude-code`, `gemini` → `gemini-cli`…), so that a tool never appears under two names. `show`, `log`, `history`, `stats` and `list` accept `--json` for scripts.
 
-Each handoff records the current git branch and commit: they appear in `show`, `log` and `diff`.
+Each handoff records the current git branch and commit: they appear in `show`, `log` and `diff`. `show` also says how many commits the code moved since the latest handoff, and when it diverged, which handoffs it missed and the `handoff diff` to compare them; `log` marks diverged handoffs.
 
 ### Screenshots
 

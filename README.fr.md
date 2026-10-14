@@ -33,6 +33,7 @@ Il fonctionne sous **Windows, macOS et Linux**, via le standard [MCP](https://mo
 - **Avant de s'arrêter**, si le code a changé depuis le début de la session ou depuis la dernière passation d'un assistant, l'assistant est invité une fois à en enregistrer une (`memory_save`).
 - Le projet est identifié par son **remote git** (`origin`). La mémoire suit donc le dépôt même si vous le déplacez ou le clonez à nouveau. Sans remote, c'est le chemin du dossier qui sert d'identifiant.
 - Chaque passation est **ajoutée** à l'historique : rien n'est écrasé et vous pouvez revenir à un état antérieur.
+- L'assistant est prévenu quand une passation peut être **dépassée** : de combien de commits le code a avancé depuis, et si elle **diverge**, c'est-à-dire si un autre assistant a enregistré une passation entre-temps sans que son auteur l'ait vue. Les passations enregistrées entre-temps sont alors affichées à côté, pour que la session suivante décide de ce qu'il faut reprendre.
 
 ## Installation
 
@@ -158,11 +159,11 @@ Ce que Handoff configure, selon ce que chaque outil permet :
 
 | Outil | Rôle | Type |
 |---|---|---|
-| `memory_get(project_path)` | Lit la dernière passation du projet | lecture seule |
-| `memory_save(project_path, summary, next_actions, stack?, agent?)` | Enregistre une nouvelle passation | ajout, non destructif |
+| `memory_get(project_path)` | Lit la dernière passation du projet, de combien le code a avancé depuis, et les passations qu'elle a manquées si elle diverge | lecture seule |
+| `memory_save(project_path, summary, next_actions, stack?, agent?, based_on?)` | Enregistre une nouvelle passation ; `based_on` est la passation de départ de la session, donnée au début de session (le serveur la connaît après `memory_get`) | ajout, non destructif |
 | `memory_history(project_path, limit?)` | Liste les passations précédentes | lecture seule |
 
-Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL. `memory_save` renvoie un avertissement quand le résumé est vide de sens, que les prochaines actions manquent, qu'un champ est long (plus de 4 Ko) ou que l'agent ne donne pas son nom, pour que l'assistant corrige sa passation.
+Aucun outil ne permet à une IA de supprimer des données ni d'exécuter du SQL. `memory_save` renvoie un avertissement quand le résumé est vide de sens, que les prochaines actions manquent, qu'un champ est long (plus de 4 Ko) ou que l'agent ne donne pas son nom, pour que l'assistant corrige sa passation. Il signale aussi quand la nouvelle passation diverge, pour que l'assistant lise ce qui a été enregistré entre-temps et enregistre à nouveau.
 
 ## CLI
 
@@ -194,7 +195,7 @@ Toutes les commandes agissent sur le dossier courant, ou sur le dossier passé a
 
 `handoff save` (comme l'outil `memory_save`) **avertit**, sans refuser, quand le résumé est très court ou ne dit rien, quand les prochaines actions manquent, ou quand un champ dépasse 4 Ko (la limite stricte reste 16 Ko). Une passation enregistrée à la main (`handoff save` sans `--agent`) ne dispense pas l'assistant de documenter son propre travail : il sera quand même invité à enregistrer le sien. Les noms d'agents connus sont unifiés (`claude` → `claude-code`, `gemini` → `gemini-cli`…), pour qu'un même outil n'apparaisse pas sous deux noms. `show`, `log`, `history`, `stats` et `list` acceptent `--json` pour les scripts.
 
-Chaque passation enregistre la branche git et le commit courants : ils apparaissent dans `show`, `log` et `diff`.
+Chaque passation enregistre la branche git et le commit courants : ils apparaissent dans `show`, `log` et `diff`. `show` indique aussi de combien de commits le code a avancé depuis la dernière passation et, quand elle diverge, les passations qu'elle a manquées et la commande `handoff diff` pour les comparer ; `log` marque les passations divergentes.
 
 ### Aperçu
 

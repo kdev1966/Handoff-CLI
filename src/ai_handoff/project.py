@@ -41,6 +41,19 @@ def git_output(root: Path, *args: str) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
+def git_exit_code(root: Path, *args: str) -> int | None:
+    """Run a read-only git command for its answer; None when git could not run or timed out."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+            check=False,
+        ).returncode
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def run_git(root: Path, *args: str) -> str | None:
     """Like git_output, but stripped, and None when the output is empty."""
     output = git_output(root, *args)
@@ -142,6 +155,39 @@ def git_context(root: Path) -> tuple[str | None, str | None]:
     if branch == "HEAD" or not branch.isprintable() or len(branch) > MAX_BRANCH_LENGTH:
         branch = None
     return branch or None, commit
+
+
+@dataclass(frozen=True)
+class Drift:
+    """How the repository moved since the commit a handoff was written at."""
+
+    # "ahead": commits on top of it; "behind": HEAD is an older commit of the same history;
+    # "elsewhere": another line of history; "missing": not in this repository
+    kind: str
+    commits: int  # for "ahead", the number of commits since
+    now: str  # the current 'branch @ 1a2b3c4' (or the commit alone on a detached HEAD)
+
+
+def git_drift(root: Path, commit: str | None) -> Drift | None:
+    """Compare HEAD with the commit a handoff was written at; None when they match or git can't tell."""
+    if not commit or not _COMMIT.fullmatch(commit) or not (root / ".git").exists():
+        return None
+    branch, head = git_context(root)
+    if head is None or head.startswith(commit) or commit.startswith(head):
+        return None
+    now = f"{branch} @ {head[:7]}" if branch else head[:7]
+    # Exit code 1 answers "no"; anything else (timeout, missing git) means git can't tell.
+    exists = git_exit_code(root, "cat-file", "-e", f"{commit}^{{commit}}")
+    if exists != 0:
+        return Drift("missing", 0, now) if exists in (1, 128) else None
+    contained = git_exit_code(root, "merge-base", "--is-ancestor", commit, "HEAD")
+    if contained == 1:
+        behind = git_exit_code(root, "merge-base", "--is-ancestor", "HEAD", commit)
+        return Drift("behind" if behind == 0 else "elsewhere", 0, now) if behind in (0, 1) else None
+    if contained != 0:
+        return None
+    count = run_git(root, "rev-list", "--count", f"{commit}..HEAD")
+    return Drift("ahead", int(count), now) if count and count.isdigit() else None
 
 
 MAX_UNTRACKED_FILES = 2000

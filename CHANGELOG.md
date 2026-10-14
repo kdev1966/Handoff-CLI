@@ -4,10 +4,25 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-14
+
+### Added
+
+- Stale handoffs are pointed out. `memory_get`, the session start context and `handoff show` say how
+  many commits the code moved since the latest handoff, or that the current code is behind it or on another
+  line of history
+  ([#15](https://github.com/kdev1966/Handoff-CLI/issues/15)).
+- Diverged handoffs are detected ([#15](https://github.com/kdev1966/Handoff-CLI/issues/15)). Each handoff
+  records the one its session started from (`based_on`): the server knows it after `memory_get`, and the
+  session start context gives the number to pass to `memory_save`. When other handoffs were saved in
+  between, `memory_save` says so, `memory_get` and the session start context show them next to the latest
+  one (up to three in full), `handoff show` names them with the `handoff diff` to compare, and `handoff log`
+  marks the handoff. Suggested on r/mcp.
+- Export and import keep these links, with the numbers of the receiving database.
 
 ### Changed
 
+- The database schema moves to version 4 (one new column); existing databases are upgraded automatically.
 - `memory_get` and `memory_history` declare all four MCP tool hints (read-only, non-destructive, idempotent,
   closed world), since some directories reject tools that leave any of them out.
 
@@ -105,6 +120,7 @@ First release.
 - English and French interface, detected from the system; Tab completion for zsh, bash and PowerShell.
 - One-command installers for macOS, Linux and Windows.
 
+[0.3.0]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/kdev1966/Handoff-CLI/compare/v0.2.0...v0.2.1
