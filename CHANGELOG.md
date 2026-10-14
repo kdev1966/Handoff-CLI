@@ -4,6 +4,15 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `handoff doctor` says whether a newer release is on PyPI, with the upgrade command that matches how
+  Handoff was installed (install script, pipx, uv or pip). It is Handoff's only network access, made only
+  when you run `doctor`; it says nothing when offline, and `HANDOFF_NO_UPDATE_CHECK=1` turns it off
+  ([#21](https://github.com/kdev1966/Handoff-CLI/issues/21)).
+
 ## [0.3.0] - 2026-10-14
 
 ### Added

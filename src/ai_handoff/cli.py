@@ -341,7 +341,25 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ui.console().print(table)
     if needs_fix:
         _say(t("doctor.fix_hint"), "warning")
+    _check_for_update(setup_flow.running_from_dev_copy())
     return 0
+
+
+def _check_for_update(dev_copy: bool) -> None:
+    """Say whether a newer release is on PyPI. A development copy is upgraded with git instead."""
+    from ai_handoff import updates
+
+    if dev_copy or not updates.enabled():
+        return
+    latest = updates.latest_release()
+    if latest is None:
+        return  # offline or blocked: nothing to say
+    newer = updates.newer_release(latest)
+    if newer:
+        command = updates.UPGRADE_COMMANDS[updates.install_method()]
+        _say(t("doctor.update_available", latest=newer, current=__version__, command=command), "warning")
+    else:
+        _say(t("doctor.up_to_date", current=__version__), "muted")
 
 
 def completion_shells() -> tuple[str, ...]:

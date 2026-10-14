@@ -49,7 +49,7 @@ handoff setup                  # connect your AI tools (automatic or manual mode
 handoff completion --install   # Tab completion (optional)
 ```
 
-Upgrade with `pipx upgrade ai-handoff` (or `uv tool upgrade ai-handoff`).
+Upgrade with `pipx upgrade ai-handoff` (or `uv tool upgrade ai-handoff`). `handoff doctor` tells you when a newer release is out.
 
 ### With the install script
 
@@ -126,7 +126,7 @@ Apply? [Y/n]
 | `handoff setup --yes [--client NAME] [--no-hooks]` | no questions, for scripts |
 | `handoff setup --dry-run` | shows the planned changes without writing anything |
 | `handoff setup --remove` | removes everything Handoff added to the tools |
-| `handoff doctor` | state of each tool: connected, automatic read and save, instructions |
+| `handoff doctor` | state of each tool: connected, automatic read and save, instructions; also says whether a newer Handoff is on PyPI, with the upgrade command |
 | `handoff doctor --fix [--yes]` | repairs what is missing in the tools you chose, and offers tools installed since; shows the changes first |
 | `handoff setup --print-config` | JSON configuration to paste into an unsupported tool |
 
@@ -282,6 +282,7 @@ The install script puts Handoff itself in `~/.local/share/handoff/venv` (macOS a
 
 - The memory is local to the machine. To move it between computers, use `handoff export` and `handoff import`; there is no automatic synchronization.
 - Two clones of the same repository share the same memory (on purpose), and so do the subfolders of a monorepo.
+- Handoff makes no network connection, except one when you run `handoff doctor`: it asks PyPI for the latest version number. `HANDOFF_NO_UPDATE_CHECK=1` turns it off.
 - AI tools change their configuration formats often. `handoff doctor` reports what is not in place; hook errors are logged to `hooks.log` in the data folder and never block the tool.
 - Automatic saving relies on the project's git state: outside a git repository, only the instructions ask the assistant to save.
 - The install scripts print English messages; `handoff` follows the system language.
