@@ -19,6 +19,9 @@ async def test_exposes_three_annotated_tools() -> None:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
         assert "memory_get" in (client.instructions or "")
     assert set(tools) == {"memory_get", "memory_save", "memory_history"}
+    hints = ("read_only_hint", "destructive_hint", "idempotent_hint", "open_world_hint")
+    for tool in tools.values():
+        assert all(isinstance(getattr(tool.annotations, hint), bool) for hint in hints)
     assert tools["memory_get"].annotations.read_only_hint is True
     assert tools["memory_history"].annotations.read_only_hint is True
     assert tools["memory_save"].annotations.destructive_hint is False

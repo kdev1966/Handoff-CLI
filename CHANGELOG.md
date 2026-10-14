@@ -4,6 +4,13 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `memory_get` and `memory_history` declare all four MCP tool hints (read-only, non-destructive, idempotent,
+  closed world), since some directories reject tools that leave any of them out.
+
 ## [0.2.3] - 2026-10-11
 
 ### Added
