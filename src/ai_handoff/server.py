@@ -30,6 +30,11 @@ ProjectPath = Annotated[
 
 mcp = MCPServer("handoff", title="Handoff", instructions=INSTRUCTIONS, version=__version__)
 
+# All four hints are set explicitly: some directories reject tools that leave any of them out.
+READ_ONLY = ToolAnnotations(
+    read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+)
+
 
 def _project(project_path: str) -> Project:
     try:
@@ -40,7 +45,7 @@ def _project(project_path: str) -> Project:
 
 @mcp.tool(
     title="Read project memory",
-    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+    annotations=READ_ONLY,
 )
 def memory_get(project_path: ProjectPath) -> str:
     """Read the latest handoff for a project: its stack, current state and next actions.
@@ -111,7 +116,7 @@ def memory_save(
 
 @mcp.tool(
     title="List previous handoffs",
-    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+    annotations=READ_ONLY,
 )
 def memory_history(
     project_path: ProjectPath,
