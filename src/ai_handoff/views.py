@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ai_handoff import activity, graph, ui
+from ai_handoff.briefing import base_label
 from ai_handoff.diffing import word_diff
 from ai_handoff.i18n import t, tn
 from ai_handoff.project import Explanation, Project
@@ -76,8 +77,17 @@ def project_header(project: Project, paused: bool, last: Handoff | None, now: da
     return header
 
 
-def show(project: Project, paused: bool, handoff: Handoff | None, now: datetime | None = None) -> Group:
+def show(
+    project: Project,
+    paused: bool,
+    handoff: Handoff | None,
+    now: datetime | None = None,
+    notes: tuple[str, ...] = (),
+) -> Group:
+    """notes: warnings about the handoff, such as how far the code moved since it."""
     parts: list[RenderableType] = [project_header(project, paused, handoff, now), Text()]
+    if notes:
+        parts += [*(Text(ui.safe(note), style="warning") for note in notes), Text()]
     if handoff:
         parts.append(handoff_panel(handoff, now))
     else:
@@ -104,8 +114,18 @@ def _width(labels: dict[int, str]) -> int:
     return max((len(label) for label in labels.values()), default=0)
 
 
-def log(handoffs: list[Handoff], by: str, width: int, now: datetime | None = None) -> Group:
-    """A 'git log --graph' style view, newest first."""
+def log(
+    handoffs: list[Handoff],
+    by: str,
+    width: int,
+    now: datetime | None = None,
+    diverged: dict[int, int] | None = None,
+) -> Group:
+    """A 'git log --graph' style view, newest first.
+
+    diverged: {handoff id: the id it is based on} for handoffs whose author missed others.
+    """
+    diverged = diverged or {}
     glyphs = ui.glyphs()
     rows, lanes = graph.layout(handoffs, graph.LANE_KEYS[by])
     colors = [_lane_color(name, by) for name in lanes]
@@ -156,6 +176,8 @@ def log(handoffs: list[Handoff], by: str, width: int, now: datetime | None = Non
         summary = handoff.summary.splitlines()[0] if handoff.summary else ""
         if handoff.is_restore:
             summary = f"{t('log.restored_from', id=handoff.agent.split(':', 1)[1])} {summary}"
+        if handoff.id in diverged:
+            line.append(f"{t('log.diverged', base=base_label(diverged[handoff.id]))} ", style="warning")
         line.append(ui.safe(summary))
         line.truncate(width, overflow="ellipsis")
         lines.append(line)

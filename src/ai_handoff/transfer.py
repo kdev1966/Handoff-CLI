@@ -3,6 +3,9 @@
 The first line is a header; every other line is one handoff with its project. An
 imported file is not trusted: every field is validated and masked again, and lines
 that fail are reported and skipped. Importing twice adds nothing the second time.
+
+Handoff numbers are local to each database: an export keeps them ("id", "based_on")
+only to link each imported handoff to the one it was based on.
 """
 
 import json
@@ -53,8 +56,7 @@ def export_lines(store: Store, keys: Iterable[str]) -> Iterator[str]:
         project = {"key": record.key, "name": record.name, "root": record.root}
         for handoff in store.all_handoffs(key):
             data = asdict(handoff)
-            for internal in ("id", "project_key"):
-                data.pop(internal)
+            data.pop("project_key")
             yield json.dumps({"project": project, **data}, ensure_ascii=False)
 
 
@@ -118,6 +120,12 @@ def parse_handoff(data: Any, override: Project | None) -> tuple[Project, dict[st
     )
     commit = data.get("git_commit")
     fields["git_commit"] = commit if isinstance(commit, str) and _COMMIT.fullmatch(commit) else None
+    for name in ("id", "based_on"):
+        number = data.get(name)
+        # bool is an int in Python: exclude it explicitly.
+        fields[name] = (
+            number if isinstance(number, int) and not isinstance(number, bool) and number >= 0 else None
+        )
     previous = data.get("redactions")
     fields["redactions"] = (previous if isinstance(previous, int) and previous >= 0 else 0) + redactions
     return project, fields
@@ -153,18 +161,34 @@ def import_lines(
     if not header_seen:
         raise HandoffError(t("import.not_export"))
 
+    # Exported number -> local number, per project, to link handoffs to the one they were based on.
+    local_ids: dict[tuple[str, int], int] = {}
+    links: list[tuple[str, int, int]] = []  # (project key, local id, exported based_on)
     for _, project, fields in sorted(parsed, key=lambda item: str(item[2]["created_at"])):
-        if store.has_handoff(
+        exported_id, based_on = fields.pop("id"), fields.pop("based_on")
+        existing = store.find_handoff(
             project.key, str(fields["created_at"]), str(fields["agent"]), str(fields["summary"])
-        ):
+        )
+        if existing is not None:
             report.duplicates += 1
+            if exported_id is not None:
+                local_ids[project.key, int(exported_id)] = existing
             continue
         if not dry_run:
-            store.import_handoff(project, **fields)
+            local_id = store.import_handoff(project, **fields)
+            if exported_id is not None:
+                local_ids[project.key, int(exported_id)] = local_id
+            if based_on is not None:
+                links.append((project.key, local_id, int(based_on)))
         report.imported += 1
         report.projects.add(project.key)
         if project.key.startswith("path:") and override is None:
             report.path_keyed.add(project.name)
+    for key, local_id, based_on in links:
+        # 0 means the session started with an empty memory; an unknown number leaves the link out.
+        local_base = 0 if based_on == 0 else local_ids.get((key, based_on))
+        if local_base is not None and local_base < local_id:
+            store.set_based_on(local_id, local_base)
     return report
 
 

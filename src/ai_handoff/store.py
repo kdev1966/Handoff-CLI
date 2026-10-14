@@ -14,7 +14,7 @@ from ai_handoff.i18n import t
 from ai_handoff.project import Project, git_context, git_fingerprint
 from ai_handoff.redact import redact
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MAX_FIELD_BYTES = 16 * 1024
 # Above this size, memory_save still succeeds but warns: the handoff is read at every session start.
 LONG_FIELD_BYTES = 4 * 1024
@@ -130,6 +130,11 @@ MIGRATIONS = {
         updated_at           TEXT NOT NULL
     );
     """,
+    # The handoff a session started from (0: it started with an empty memory), so that a
+    # save can tell whether others were saved in between. NULL when unknown.
+    4: """
+    ALTER TABLE handoffs ADD COLUMN based_on INTEGER;
+    """,
 }
 
 
@@ -145,6 +150,7 @@ class Handoff:
     created_at: str
     git_branch: str | None = None
     git_commit: str | None = None
+    based_on: int | None = None
 
     def __post_init__(self) -> None:
         # Older handoffs may carry an alias ('claude'): show every handoff under its tool's name.
@@ -180,12 +186,13 @@ class Handoff:
             return f"{self.git_branch} @ {commit}"
         return self.git_branch or commit
 
-    def to_text(self) -> str:
-        """Plain English text for AI assistants (never translated)."""
+    def to_text(self, notes: tuple[str, ...] = ()) -> str:
+        """Plain text for AI assistants, with optional notes under the title line."""
         where = f" on {self.git_label()}" if self.git_label() else ""
         return "\n".join(
             [
                 f"Handoff #{self.id}, saved {self.created_at} by {self.agent}{where}.",
+                *notes,
                 "",
                 "## Stack",
                 self.stack or "(not specified)",
@@ -311,6 +318,54 @@ class Store:
         ).fetchall()
         return [Handoff(**dict(row)) for row in rows]
 
+    def last_id(self, key: str) -> int:
+        """The number of the most recently stored handoff of a project, 0 when it has none."""
+        row = self._conn.execute("SELECT MAX(id) FROM handoffs WHERE project_key = ?", (key,)).fetchone()
+        return row[0] or 0
+
+    def is_base(self, key: str, handoff_id: int) -> bool:
+        """Whether a session can have started from this handoff: 0 (empty memory) or one of the project's."""
+        if handoff_id == 0:
+            return True
+        row = self._conn.execute(
+            "SELECT 1 FROM handoffs WHERE id = ? AND project_key = ?", (handoff_id, key)
+        ).fetchone()
+        return row is not None
+
+    def intervening(self, handoff: Handoff) -> list[Handoff]:
+        """Handoffs stored after the one this handoff is based on, and before it, newest first.
+
+        Any of them means the handoff diverged: its author did not see them. A handoff written
+        before the base (an import of older notes gets a higher number) is not new work and
+        does not count.
+        """
+        if handoff.based_on is None:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT o.* FROM handoffs o LEFT JOIN handoffs b ON b.id = ?
+            WHERE o.project_key = ? AND o.id > ? AND o.id < ?
+              AND (b.id IS NULL OR o.created_at >= b.created_at)
+            ORDER BY o.id DESC
+            """,
+            (handoff.based_on, handoff.project_key, handoff.based_on, handoff.id),
+        ).fetchall()
+        return [Handoff(**dict(row)) for row in rows]
+
+    def diverged(self, key: str) -> dict[int, int]:
+        """{handoff id: the id it is based on} for every handoff of a project that diverged."""
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT h.id, h.based_on FROM handoffs h
+            JOIN handoffs o ON o.project_key = h.project_key AND o.id > h.based_on AND o.id < h.id
+            LEFT JOIN handoffs b ON b.id = h.based_on
+            WHERE h.project_key = ? AND h.based_on IS NOT NULL
+              AND (b.id IS NULL OR o.created_at >= b.created_at)
+            """,
+            (key,),
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
     def fingerprints(self, key: str) -> tuple[str | None, str | None]:
         """(baseline, reminded) working tree fingerprints of a project."""
         row = self._conn.execute(
@@ -356,8 +411,12 @@ class Store:
         next_actions: str,
         stack: str | None = None,
         agent: str | None = None,
+        based_on: int | None = None,
     ) -> Handoff:
-        """Append a handoff. Without a stack, the previous one is kept."""
+        """Append a handoff. Without a stack, the previous one is kept.
+
+        based_on is the handoff the author started from (see is_base); the caller checks it.
+        """
         if self.is_paused(project.key):
             raise PausedError(t("error.paused_not_saved", project=project.name))
         fields = {
@@ -373,7 +432,7 @@ class Store:
         for name, value in fields.items():
             fields[name], count = redact(value)
             redactions += count
-        return self._append(project, clean_agent(agent), redactions=redactions, **fields)
+        return self._append(project, clean_agent(agent), redactions=redactions, based_on=based_on, **fields)
 
     def restore(self, handoff_id: int, project: Project) -> Handoff:
         """Make an old handoff the latest again by appending a copy of it."""
@@ -387,6 +446,7 @@ class Store:
             summary=old.summary,
             next_actions=old.next_actions,
             redactions=old.redactions,
+            based_on=None,
         )
 
     def set_paused(self, project: Project, paused: bool) -> None:
@@ -404,26 +464,27 @@ class Store:
             self._conn.execute("DELETE FROM project_state WHERE project_key = ?", (key,))
         return record.handoffs
 
-    def has_handoff(self, key: str, created_at: str, agent: str, summary: str) -> bool:
-        """Whether this exact handoff is already stored (used to import without duplicates)."""
+    def find_handoff(self, key: str, created_at: str, agent: str, summary: str) -> int | None:
+        """The id of this exact handoff when it is already stored (used to import without duplicates)."""
         row = self._conn.execute(
-            "SELECT 1 FROM handoffs WHERE project_key = ? AND created_at = ? AND agent = ? AND summary = ?",
+            "SELECT id FROM handoffs WHERE project_key = ? AND created_at = ? AND agent = ? AND summary = ?",
             (key, created_at, agent, summary),
         ).fetchone()
-        return row is not None
+        return row[0] if row else None
 
-    def import_handoff(self, project: Project, **fields: object) -> None:
+    def import_handoff(self, project: Project, **fields: object) -> int:
         """Store a handoff from an export as it was: same date, agent and git context.
 
         The project's local name and folder win over the exported ones, and the working
         tree baseline is left alone: an imported note says nothing about the code here.
+        Returns the new handoff's id.
         """
         with self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO projects (key, name, root, created_at) VALUES (?, ?, ?, ?)",
                 (project.key, project.name, str(project.root), _now()),
             )
-            self._conn.execute(
+            cursor = self._conn.execute(
                 """
                 INSERT INTO handoffs (project_key, agent, stack, summary, next_actions, redactions,
                                       created_at, git_branch, git_commit)
@@ -432,6 +493,12 @@ class Store:
                 """,
                 {"project_key": project.key, **fields},
             )
+        return cursor.lastrowid
+
+    def set_based_on(self, handoff_id: int, based_on: int) -> None:
+        """Link an imported handoff to the one it was based on, once both are stored."""
+        with self._conn:
+            self._conn.execute("UPDATE handoffs SET based_on = ? WHERE id = ?", (based_on, handoff_id))
 
     def _append(self, project: Project, agent: str, **fields: object) -> Handoff:
         branch, commit = git_context(project.root)
@@ -445,9 +512,9 @@ class Store:
             cursor = self._conn.execute(
                 """
                 INSERT INTO handoffs (project_key, agent, stack, summary, next_actions, redactions,
-                                      created_at, git_branch, git_commit)
+                                      created_at, git_branch, git_commit, based_on)
                 VALUES (:project_key, :agent, :stack, :summary, :next_actions, :redactions,
-                        :created_at, :git_branch, :git_commit)
+                        :created_at, :git_branch, :git_commit, :based_on)
                 """,
                 {
                     "project_key": project.key,

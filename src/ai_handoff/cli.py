@@ -12,7 +12,7 @@ from pathlib import Path
 
 from rich.text import Text
 
-from ai_handoff import __version__, activity, paths, ui, views
+from ai_handoff import __version__, activity, briefing, paths, ui, views
 from ai_handoff.context_file import context_path, remove_context, write_context
 from ai_handoff.errors import HandoffError
 from ai_handoff.i18n import t, tn
@@ -56,16 +56,26 @@ def cmd_show(args: argparse.Namespace) -> int:
     with Store() as store:
         paused = store.is_paused(project.key)
         handoff = store.latest(project.key)
+        intervening = store.intervening(handoff) if handoff else []
     if args.json:
         _print_json(
             {
                 "project": _project_json(project),
                 "paused": paused,
                 "handoff": asdict(handoff) if handoff else None,
+                "intervening": [other.id for other in intervening],
             }
         )
         return 0
-    ui.console().print(views.show(project, paused, handoff))
+    notes: list[str] = []
+    if handoff:
+        drift = briefing.drift_note(project, handoff)
+        diverged = briefing.divergence_note(handoff, intervening)
+        if drift:
+            notes.append(drift)
+        if diverged:
+            notes += [diverged, t("diverged.cli_hint", other=intervening[0].id, id=handoff.id)]
+    ui.console().print(views.show(project, paused, handoff, notes=tuple(notes)))
     return 0
 
 
@@ -114,8 +124,10 @@ def cmd_log(args: argparse.Namespace) -> int:
     elif not handoffs:
         _say(t("show.no_handoff"), "muted")
     else:
+        with Store() as store:
+            diverged = store.diverged(project.key)
         console = ui.console()
-        console.print(views.log(handoffs, args.by, console.width), soft_wrap=True)
+        console.print(views.log(handoffs, args.by, console.width, diverged=diverged), soft_wrap=True)
     return 0
 
 

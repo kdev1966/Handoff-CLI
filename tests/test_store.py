@@ -193,7 +193,7 @@ def test_migrates_a_version_1_database(handoff_home: Path, project: Project) -> 
     conn.close()
     with Store() as store:
         old = store.latest(project.key)
-        assert (old.summary, old.git_branch, old.git_commit) == ("from v1", None, None)
+        assert (old.summary, old.git_branch, old.git_commit, old.based_on) == ("from v1", None, None, None)
         save(store, project)
     conn = sqlite3.connect(paths.db_path())
     assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
