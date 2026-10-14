@@ -13,6 +13,12 @@ All notable changes to Handoff are listed here. The format follows
   when you run `doctor`; it says nothing when offline, and `HANDOFF_NO_UPDATE_CHECK=1` turns it off
   ([#21](https://github.com/kdev1966/Handoff-CLI/issues/21)).
 
+### Changed
+
+- When a Handoff started before an upgrade (an AI tool's MCP server, for example) meets a database already
+  upgraded by the new version, its error now says to restart the AI tool or reconnect its MCP server,
+  instead of only "Upgrade Handoff". This takes effect for upgrades from this version on.
+
 ## [0.3.0] - 2026-10-14
 
 ### Added

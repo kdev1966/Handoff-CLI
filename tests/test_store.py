@@ -163,8 +163,10 @@ def test_refuses_database_from_newer_version(handoff_home: Path) -> None:
     conn = sqlite3.connect(paths.db_path())
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
     conn.close()
-    with pytest.raises(HandoffError, match="newer version"):
+    with pytest.raises(HandoffError, match="newer version") as error:
         Store()
+    # A server started before an upgrade gets this too: it must say to restart, not only to upgrade.
+    assert "restart your AI tool" in str(error.value)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")

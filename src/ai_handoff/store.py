@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ai_handoff import paths
+from ai_handoff import __version__, paths
 from ai_handoff.errors import HandoffError, NotFoundError, PausedError, ValidationError
 from ai_handoff.i18n import t
 from ai_handoff.project import Project, git_context, git_fingerprint
@@ -270,7 +270,7 @@ class Store:
     def _migrate(self) -> None:
         version = self._conn.execute("PRAGMA user_version").fetchone()[0]
         if version > SCHEMA_VERSION:
-            raise HandoffError(t("error.schema_newer", path=self.path, version=version))
+            raise HandoffError(t("error.schema_newer", path=self.path, version=version, current=__version__))
         for target in range(version + 1, SCHEMA_VERSION + 1):
             # One transaction per step: a failed migration leaves the previous schema intact.
             self._conn.executescript(

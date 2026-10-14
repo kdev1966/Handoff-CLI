@@ -148,7 +148,9 @@ EN = {
     ),
     "error.agent_invalid": "'agent' must be 1 to 64 characters: letters, digits, spaces and . : / @ + - _",
     "error.schema_newer": (
-        "{path} was created by a newer version of Handoff (schema {version}). Upgrade Handoff."
+        "{path} was created by a newer version of Handoff (schema {version}) than this one ({current}). "
+        "If you just upgraded Handoff, this is a process started before the upgrade: restart your AI tool, "
+        "or reconnect its Handoff MCP server. Otherwise, upgrade Handoff."
     ),
     "error.handoff_not_found": "No handoff with id {id}.",
     "error.handoff_other_project": "Handoff {id} does not belong to {project}.",
@@ -426,7 +428,9 @@ FR = {
         "'agent' doit contenir de 1 à 64 caractères : lettres, chiffres, espaces et . : / @ + - _"
     ),
     "error.schema_newer": (
-        "{path} a été créé par une version plus récente de Handoff (schéma {version}). Mettez Handoff à jour."
+        "{path} a été créé par une version plus récente de Handoff (schéma {version}) que celle-ci ({current}). "
+        "Si vous venez de mettre Handoff à jour, ce processus a démarré avant la mise à jour : redémarrez votre "
+        "outil IA, ou reconnectez son serveur MCP Handoff. Sinon, mettez Handoff à jour."
     ),
     "error.handoff_not_found": "Aucune passation numéro {id}.",
     "error.handoff_other_project": "La passation {id} n'appartient pas à {project}.",
