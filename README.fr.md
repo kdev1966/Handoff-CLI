@@ -49,7 +49,7 @@ handoff setup                  # connecte vos outils IA (mode automatique ou man
 handoff completion --install   # autocomplétion avec Tab (facultatif)
 ```
 
-Mise à jour : `pipx upgrade ai-handoff` (ou `uv tool upgrade ai-handoff`).
+Mise à jour : `pipx upgrade ai-handoff` (ou `uv tool upgrade ai-handoff`). `handoff doctor` vous signale quand une nouvelle version est publiée.
 
 ### Avec le script d'installation
 
@@ -126,7 +126,7 @@ Appliquer ? [O/n]
 | `handoff setup --yes [--client NOM] [--no-hooks]` | sans questions, pour les scripts |
 | `handoff setup --dry-run` | affiche les changements prévus sans rien écrire |
 | `handoff setup --remove` | retire tout ce que Handoff a ajouté aux outils |
-| `handoff doctor` | état de chaque outil : connecté, lecture et enregistrement automatiques, consigne |
+| `handoff doctor` | état de chaque outil : connecté, lecture et enregistrement automatiques, consigne ; indique aussi si une version plus récente est sur PyPI, avec la commande de mise à jour |
 | `handoff doctor --fix [--yes]` | répare ce qui manque dans les outils choisis, et propose les outils installés depuis ; montre les changements d'abord |
 | `handoff setup --print-config` | configuration JSON à copier pour un outil non pris en charge |
 
@@ -282,6 +282,7 @@ Le script d'installation place Handoff lui-même dans `~/.local/share/handoff/ve
 
 - La mémoire est locale à la machine. Pour la transférer entre postes, utilisez `handoff export` et `handoff import` ; il n'y a pas de synchronisation automatique.
 - Deux clones d'un même dépôt partagent la même mémoire (c'est voulu), tout comme les sous-dossiers d'un monorepo.
+- Handoff n'ouvre aucune connexion réseau, sauf une quand vous lancez `handoff doctor` : il demande à PyPI le numéro de la dernière version. `HANDOFF_NO_UPDATE_CHECK=1` la désactive.
 - Les formats de configuration des outils IA évoluent vite. `handoff doctor` signale ce qui n'est pas en place ; les erreurs des hooks sont consignées dans `hooks.log`, dans le dossier de données, sans jamais bloquer l'outil.
 - L'enregistrement automatique repose sur l'état git du projet : hors dépôt git, seule la consigne demande à l'assistant d'enregistrer.
 - Les messages des scripts d'installation sont en anglais ; ceux de `handoff` suivent la langue du système.

@@ -11,9 +11,10 @@ from ai_handoff.project import Project, resolve_project
 
 @pytest.fixture(autouse=True)
 def handoff_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Every test gets its own empty database."""
+    """Every test gets its own empty database, and never reaches the network."""
     home = tmp_path / "handoff-data"
     monkeypatch.setenv("HANDOFF_HOME", str(home))
+    monkeypatch.setenv("HANDOFF_NO_UPDATE_CHECK", "1")
     return home
 
 

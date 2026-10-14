@@ -148,7 +148,9 @@ EN = {
     ),
     "error.agent_invalid": "'agent' must be 1 to 64 characters: letters, digits, spaces and . : / @ + - _",
     "error.schema_newer": (
-        "{path} was created by a newer version of Handoff (schema {version}). Upgrade Handoff."
+        "{path} was created by a newer version of Handoff (schema {version}) than this one ({current}). "
+        "If you just upgraded Handoff, this is a process started before the upgrade: restart your AI tool, "
+        "or reconnect its Handoff MCP server. Otherwise, upgrade Handoff."
     ),
     "error.handoff_not_found": "No handoff with id {id}.",
     "error.handoff_other_project": "Handoff {id} does not belong to {project}.",
@@ -208,6 +210,8 @@ EN = {
     "doctor.new_tools": "New AI tools found: {clients}. Run handoff doctor --fix in a terminal to add them.",
     "doctor.all_good": "Everything is in place.",
     "doctor.fix_hint": "Something is missing: handoff doctor --fix repairs it (you see the changes first).",
+    "doctor.update_available": "Handoff {latest} is available (you have {current}). Upgrade with: {command}",
+    "doctor.up_to_date": "Handoff {current} is the latest release (checked on PyPI; HANDOFF_NO_UPDATE_CHECK=1 turns this off).",
     "doctor.off": "off",
     "where.project": "Project",
     "where.key": "Key",
@@ -424,7 +428,9 @@ FR = {
         "'agent' doit contenir de 1 à 64 caractères : lettres, chiffres, espaces et . : / @ + - _"
     ),
     "error.schema_newer": (
-        "{path} a été créé par une version plus récente de Handoff (schéma {version}). Mettez Handoff à jour."
+        "{path} a été créé par une version plus récente de Handoff (schéma {version}) que celle-ci ({current}). "
+        "Si vous venez de mettre Handoff à jour, ce processus a démarré avant la mise à jour : redémarrez votre "
+        "outil IA, ou reconnectez son serveur MCP Handoff. Sinon, mettez Handoff à jour."
     ),
     "error.handoff_not_found": "Aucune passation numéro {id}.",
     "error.handoff_other_project": "La passation {id} n'appartient pas à {project}.",
@@ -484,6 +490,8 @@ FR = {
     "doctor.new_tools": "Nouveaux outils IA trouvés : {clients}. Lancez handoff doctor --fix dans un terminal pour les ajouter.",
     "doctor.all_good": "Tout est en place.",
     "doctor.fix_hint": "Il manque quelque chose : handoff doctor --fix le répare (vous voyez les changements d'abord).",
+    "doctor.update_available": "Handoff {latest} est disponible (vous avez {current}). Mettez à jour avec : {command}",
+    "doctor.up_to_date": "Handoff {current} est la dernière version (vérifié sur PyPI ; HANDOFF_NO_UPDATE_CHECK=1 désactive cette vérification).",
     "doctor.off": "désactivé",
     "where.project": "Projet",
     "where.key": "Clé",
