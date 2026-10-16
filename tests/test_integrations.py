@@ -536,3 +536,91 @@ def test_a_tool_configured_by_hand_since_is_not_new(capsys, fake_home: Path) -> 
     assert run_cli(capsys, "setup", "--yes", "--client", "cursor")[0] == 0
     integrations.apply([clients.by_name("kiro")], hooks=True, dry_run=False)  # not through setup
     assert "New AI tools" not in run_cli(capsys, "doctor", "--fix", "--yes")[1]
+
+
+# OpenCode rules file
+
+
+def opencode_setup(fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    for name in ("OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_CLAUDE_CODE_PROMPT"):
+        monkeypatch.delenv(name, raising=False)
+    (fake_home / ".config" / "opencode").mkdir(parents=True)
+    return fake_home / ".config" / "opencode" / "AGENTS.md", fake_home / ".claude" / "CLAUDE.md"
+
+
+def write_claude(claude: Path, text: str = "# My rules\n\nKeep this.\n") -> str:
+    claude.parent.mkdir(parents=True, exist_ok=True)
+    claude.write_text(text, encoding="utf-8")
+    return text
+
+
+def test_opencode_without_claude_md_uses_agents_md(fake_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    agents, _claude = opencode_setup(fake_home, monkeypatch)
+    opencode = clients.by_name("opencode")
+    assert integrations.apply([opencode], hooks=True, dry_run=False)[0].error is None
+    assert BLOCK_BEGIN in agents.read_text(encoding="utf-8")
+    integrations.remove([opencode], dry_run=False)
+    assert not agents.exists()
+
+
+def test_opencode_block_goes_into_claude_md_when_agents_md_is_missing(
+    fake_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agents, claude = opencode_setup(fake_home, monkeypatch)
+    original = write_claude(claude)
+    opencode = clients.by_name("opencode")
+    assert integrations.apply([opencode], hooks=True, dry_run=False)[0].error is None
+    assert files.has_block(claude.read_text(encoding="utf-8"))
+    assert not agents.exists()
+    assert integrations.status(opencode)["instructions"] is True
+    integrations.remove([opencode], dry_run=False)
+    assert claude.read_text(encoding="utf-8") == original
+    assert not agents.exists()
+
+
+def test_opencode_migrates_a_handoff_only_agents_md_from_0_3_1(
+    fake_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agents, claude = opencode_setup(fake_home, monkeypatch)
+    write_claude(claude)
+    agents.write_text(files.upsert_block("", clients.INSTRUCTIONS), encoding="utf-8")
+    opencode = clients.by_name("opencode")
+    first = integrations.apply([opencode], hooks=True, dry_run=False)[0]
+    assert first.error is None
+    assert not agents.exists()
+    assert files.has_block(claude.read_text(encoding="utf-8"))
+    assert integrations.status(opencode)["instructions"] is True
+    after_first = claude.read_text(encoding="utf-8")
+    second = integrations.apply([opencode], hooks=True, dry_run=False)[0]
+    assert second.error is None
+    assert not any("AGENTS.md" in change or "CLAUDE.md" in change for change in second.changes)
+    assert claude.read_text(encoding="utf-8") == after_first
+    assert not agents.exists()
+
+
+@pytest.mark.parametrize("with_block", [False, True])
+def test_opencode_keeps_a_users_agents_md_and_leaves_claude_md_alone(
+    fake_home: Path, monkeypatch: pytest.MonkeyPatch, with_block: bool
+) -> None:
+    agents, claude = opencode_setup(fake_home, monkeypatch)
+    write_claude(claude)
+    before = claude.read_bytes()
+    user_text = "# OpenCode rules\n\nMine.\n"
+    agents.write_text(files.upsert_block(user_text, "old") if with_block else user_text, encoding="utf-8")
+    opencode = clients.by_name("opencode")
+    assert integrations.apply([opencode], hooks=True, dry_run=False)[0].error is None
+    text = agents.read_text(encoding="utf-8")
+    assert files.has_block(text) and text.startswith(user_text)
+    assert claude.read_bytes() == before
+
+
+def test_opencode_claude_fallback_disabled_uses_agents_md(
+    fake_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agents, claude = opencode_setup(fake_home, monkeypatch)
+    write_claude(claude)
+    before = claude.read_bytes()
+    monkeypatch.setenv("OPENCODE_DISABLE_CLAUDE_CODE", "1")
+    assert integrations.apply([clients.by_name("opencode")], hooks=True, dry_run=False)[0].error is None
+    assert BLOCK_BEGIN in agents.read_text(encoding="utf-8")
+    assert claude.read_bytes() == before
