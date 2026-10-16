@@ -4,6 +4,16 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- OpenCode keeps reading your `~/.claude/CLAUDE.md`. OpenCode falls back to that file only when
+  `~/.config/opencode/AGENTS.md` does not exist, and Handoff used to create `AGENTS.md` just for its
+  instructions, which silently hid your `CLAUDE.md` from OpenCode. Handoff now adds its instructions to
+  the file OpenCode actually reads, and `handoff setup` or `handoff doctor --fix` removes an `AGENTS.md`
+  that only holds Handoff's instructions.
+
 ## [0.3.1] - 2026-10-14
 
 ### Added

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ai_handoff import __version__, paths
+from ai_handoff.integrations.files import has_block, remove_block
 from ai_handoff.integrations.parts import (
     SERVER_NAME,
     ClaudePlugin,
@@ -23,6 +24,7 @@ from ai_handoff.integrations.parts import (
     MarkdownBlock,
     OwnFile,
     Part,
+    RetiredBlock,
     hook_argv,
     hook_command,
     powershell_command,
@@ -182,6 +184,28 @@ def cursor_hook_parts() -> list[Part]:
         {"sessionStart": entry("session-start"), "stop": entry("stop")},
         defaults={"version": 1},
     )
+
+
+def opencode_rules_parts() -> list[Part]:
+    """The Handoff block in the global rules file OpenCode reads.
+
+    OpenCode reads its own AGENTS.md, or ~/.claude/CLAUDE.md when AGENTS.md is missing, unless its Claude
+    Code fallback is turned off. Creating AGENTS.md for Handoff alone would hide the user's CLAUDE.md
+    from OpenCode, so the block goes into CLAUDE.md in that case; an AGENTS.md that only holds Handoff's
+    block, written by 0.3.1 and earlier, is removed.
+    """
+    agents = home() / ".config" / "opencode" / "AGENTS.md"
+    claude = home() / ".claude" / "CLAUDE.md"
+    switches = ("OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_CLAUDE_CODE_PROMPT")
+    fallback_off = any(os.environ.get(name) for name in switches)
+    try:
+        text = agents.read_text(encoding="utf-8") if agents.exists() else None
+    except (OSError, UnicodeDecodeError):
+        text = ""  # unreadable: the user's file, left as it is
+    users_agents = text is not None and (not has_block(text) or bool(remove_block(text).strip()))
+    if users_agents or fallback_off or not claude.is_file():
+        return [MarkdownBlock(agents, instructions)]
+    return [MarkdownBlock(claude, instructions), RetiredBlock(agents, instructions)]
 
 
 # Clients
@@ -364,7 +388,7 @@ INTEGRATIONS: list[Integration] = [
                 ("mcp",),
                 lambda: {"type": "local", "command": server_command(), "enabled": True},
             ),
-            MarkdownBlock(home() / ".config" / "opencode" / "AGENTS.md", instructions),
+            *opencode_rules_parts(),
         ],
     ),
     Integration(

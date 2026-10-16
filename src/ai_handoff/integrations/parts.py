@@ -248,6 +248,19 @@ class MarkdownBlock(Part):
             return False
 
 
+class RetiredBlock(MarkdownBlock):
+    """A Handoff block left by an earlier version in a file that must no longer hold it.
+
+    Applying removes it, and deletes the file if nothing else is left.
+    """
+
+    def apply(self, session: Session) -> None:
+        self.remove(session)
+
+    def present(self) -> bool:
+        return not super().present()
+
+
 class OwnFile(Part):
     """A file that belongs to Handoff alone (its own rules or hooks file in a tool's folder)."""
 
