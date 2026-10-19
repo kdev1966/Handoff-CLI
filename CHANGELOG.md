@@ -4,6 +4,15 @@ All notable changes to Handoff are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- CodeGeeX: `handoff setup` and `handoff doctor --fix` add the Handoff server to
+  `~/.codegeex/agent/configs/user_mcp_config.json`, which its agent mode reads, and keep the servers
+  already there. CodeGeeX has no hooks and no instructions file, so ask it to call `memory_get` and
+  `memory_save`.
+
 ## [0.3.2] - 2026-10-16
 
 ### Fixed

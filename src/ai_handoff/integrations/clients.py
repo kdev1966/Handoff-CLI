@@ -347,6 +347,19 @@ INTEGRATIONS: list[Integration] = [
         ],
     ),
     Integration(
+        "codegeex",
+        "CodeGeeX",
+        lambda: _exists(home() / ".codegeex"),
+        lambda: [
+            JsonEntry(
+                home() / ".codegeex" / "agent" / "configs" / "user_mcp_config.json",
+                ("mcpServers",),
+                stdio_entry(),
+            ),
+        ],
+        notes=["note.codegeex"],
+    ),
+    Integration(
         "kiro",
         "Kiro",
         lambda: _exists(home() / ".kiro"),

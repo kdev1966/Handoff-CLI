@@ -143,6 +143,7 @@ What Handoff configures, depending on what each tool allows:
 | Cline, Kiro, opencode, Windsurf/Devin, Antigravity | ✅ | — | — | ✅ global rules file |
 | Zed | ✅ ³ | — | — | global `AGENTS.md` |
 | Claude Desktop | ✅ (restart needed) | — | — | — |
+| CodeGeeX | ✅ agent mode | — | — | — |
 | Continue, JetBrains AI Assistant | configure by hand with `--print-config` | | | |
 
 ¹ Codex runs a new hook only after you approve it once in `/hooks`.

@@ -76,6 +76,7 @@ KNOWN_AGENTS = {
     "junie",
     "opencode",
     "cline",
+    "codegeex",
     "kiro",
     "windsurf",
     "antigravity",
