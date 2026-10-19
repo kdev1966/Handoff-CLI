@@ -261,6 +261,17 @@ def test_no_tool_is_pre_approved(fake_home: Path) -> None:
         assert "autoApprove" not in load(path)["mcpServers"]["handoff"]
 
 
+def test_codegeex_keeps_the_user_servers(fake_home: Path) -> None:
+    config = fake_home / ".codegeex" / "agent" / "configs" / "user_mcp_config.json"
+    write_json(config, {"mcpServers": {"mine": {"command": "mine"}}})
+    integration = clients.by_name("codegeex")
+    assert integration.detect()
+    integrations.apply([integration], hooks=True, dry_run=False)
+    servers = load(config)["mcpServers"]
+    assert servers["mine"] == {"command": "mine"}
+    assert servers["handoff"]["args"][-1] == "serve"
+
+
 def test_one_failing_tool_does_not_stop_the_others(fake_home: Path) -> None:
     (fake_home / ".cursor").mkdir()
     (fake_home / ".cursor" / "mcp.json").write_text("{ // comment }", encoding="utf-8")
