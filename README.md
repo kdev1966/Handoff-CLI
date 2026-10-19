@@ -298,7 +298,7 @@ Several tools help you move between AI coding assistants. They solve different p
 | Source | handoffs written by the assistants | the tools' session transcripts | the current session, on request |
 | Trigger | automatic (MCP and hooks) after `handoff setup` | manual, at each switch | manual (`/handoff <goal>`) |
 | Kept over time | append-only history: log, diff, stats, export | no | no (disposable file) |
-| Configures your tools | MCP, hooks and instructions in 14 tools | no | installs the skill |
+| Configures your tools | MCP, hooks and instructions in 15 tools | no | installs the skill |
 
 Use **continues** when you hit a rate limit in the middle of a task and want that exact conversation to carry on elsewhere: it carries far more detail (messages, commands, file activity) and supports tools Handoff does not (Amp, Roo Code, Kilo Code, Crush, Kimi, Qwen Code, Factory Droid). Use **Handoff** when you want every new session, in any tool, to start from the project's current state without doing anything. The two work well together.
 

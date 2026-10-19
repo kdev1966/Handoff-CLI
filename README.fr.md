@@ -298,7 +298,7 @@ Plusieurs outils aident à passer d'un assistant IA à un autre. Ils ne réponde
 | Source | les passations rédigées par les assistants | les journaux de session des outils | la session en cours, à la demande |
 | Déclenchement | automatique (MCP et hooks) après `handoff setup` | manuel, à chaque changement d'outil | manuel (`/handoff <objectif>`) |
 | Conservé dans le temps | historique en ajout seul : log, diff, stats, export | non | non (fichier jetable) |
-| Configure vos outils | MCP, hooks et consignes dans 14 outils | non | installe la compétence |
+| Configure vos outils | MCP, hooks et consignes dans 15 outils | non | installe la compétence |
 
 Utilisez **continues** quand vous atteignez une limite d'usage en plein travail et voulez que cette conversation précise continue ailleurs : il transmet beaucoup plus de détails (messages, commandes, fichiers touchés) et gère des outils que Handoff ne gère pas (Amp, Roo Code, Kilo Code, Crush, Kimi, Qwen Code, Factory Droid). Utilisez **Handoff** pour que chaque nouvelle session, dans n'importe quel outil, parte de l'état actuel du projet sans rien faire. Les deux sont complémentaires.
 
